@@ -1,5 +1,7 @@
 # BattMind🤵‍♂️🔋⚡ til Home Assistant (PyScript)
-## Alpha version
+
+## :warning: <mark><center>**Dette projekt er i alpha stadie**</center></mark> :warning:
+
 ### Beskrivelse:
 Styring af husbatteri
 
