@@ -6782,8 +6782,12 @@ def charge_if_needed():
         TASKS[f"{func_prefix}cheap_grid_charge_hours"] = task.create(cheap_grid_charge_hours)
         done, pending = task.wait({TASKS[f"{func_prefix}cheap_grid_charge_hours"]})
         
+        to_timestamp = getTime()
+        from_timestamp = to_timestamp - datetime.timedelta(minutes=CONFIG['cron_interval'])
+        
+        powerwall_watt_flow = int(get_average_value(CONFIG['home']['entity_ids']['powerwall_watt_flow_entity_id'], from_timestamp, to_timestamp, convert_to="W", error_state=0.0))
         inverter_watt_solar_only = get_state(CONFIG['solar']['entity_ids']['production_entity_id'], float_type=True, error_state=0.0)
-        powerwall_watt_flow = int(get_state(CONFIG['home']['entity_ids']['powerwall_watt_flow_entity_id'], float_type=True, error_state=0.0))
+        
         currentHour = reset_time_to_hour()
         
         if no_charging_modes_active():
