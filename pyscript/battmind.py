@@ -5392,10 +5392,6 @@ def cheap_grid_charge_hours():
     overview = []
     
     try:
-        for key, value in battery_expenses.items():
-            if not isinstance(value, (int, float)):
-                raise ValueError(f"Invalid type for battery_expenses[{key}]: expected int or float, got {type(value)}")
-            
         percentage = round(battery_expenses.get("battery_level_expenses_percentage", 0.0), 0)
         solar_percentage = round(battery_expenses.get("battery_level_expenses_solar_percentage", 0.0), 0)
         kwh = round(battery_expenses.get("battery_level_expenses_kwh", 0.0), 1)
