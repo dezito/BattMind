@@ -2584,14 +2584,9 @@ def deactivate_script_enabled():
 def consumption_forecast_type():
     forecast_type = get_state(f"input_select.{__name__}_consumption_forecast_type", error_state="ema").lower()
     
-    if "ema" in forecast_type:
-        return "ema"
-    elif "average" in forecast_type:
-        return "avg"
-    elif "trend" in forecast_type:
-        return "trend"
-    else:
-        return "ema"
+    if "ema" in forecast_type in ("ema", "average", "trend"):
+        return forecast_type
+    return "ema"
 
 def cheapest_hour_fill_planner_enabled():
     if get_state(f"input_boolean.{__name__}_cheapest_hour_fill_planner") == "on":
@@ -3821,7 +3816,7 @@ def get_charging_loss():
 def calc_battery_loss_cost(price):
     return price * abs(get_charging_loss())
 
-def update_grid_prices():
+def update_grid_prices(initial_run = False):
     func_name = "update_grid_prices"
     func_prefix = f"{func_name}_"
     _LOGGER = globals()['_LOGGER'].getChild(func_name)
@@ -3830,6 +3825,10 @@ def update_grid_prices():
     try:
         TASKS[f"{func_prefix}"] = task.create(get_hour_prices, update_prices = True)
         done, pending = task.wait({TASKS[f"{func_prefix}"]})
+        
+        if not initial_run:
+            TASKS[f"{func_prefix}"] = task.create(append_kwh_prices)
+            done, pending = task.wait({TASKS[f"{func_prefix}"]})
     except (asyncio.CancelledError, asyncio.TimeoutError, KeyError) as e:
         _LOGGER.warning(f"Task for updating grid prices was cancelled or timed out: {e} {type(e)}")
         return
@@ -4076,12 +4075,10 @@ def cheap_grid_charge_hours():
     energy_prediction_db = deepcopy(LOCAL_ENERGY_PREDICTION_DB)
     battery_expenses = deepcopy(BATTERY_LEVEL_EXPENSES)
 
-    today = getTimeStartOfDay()
     current_hour = reset_time_to_hour()
     now = getTime()
     
     chargeHours = {}
-    charge_hours_alternative = {}
     
     totalCost = 0.0
     totalkWh = 0.0
@@ -4351,7 +4348,6 @@ def cheap_grid_charge_hours():
             sub_sub_func_name = "add_charging_to_days"
             _LOGGER = globals()['_LOGGER'].getChild(f"{func_name}.{sub_func_name}.{sub_sub_func_name}")
             
-            now = getTime()
             days = daysBetween(now, timestamp)
             try:
                 for day in range(days, amount_of_days):
@@ -4473,8 +4469,8 @@ def cheap_grid_charge_hours():
                         if cheapest_price_diff is not None and cheapest_price_diff > cheapest_price_rise_threshold:
                             continue
                         
-                        if not in_between(timestamp, max(current_hour, charging_plan[day]["start_of_day"]), timestamp + datetime.timedelta(hours=1)) or timestamp < current_hour:
-                            continue
+                        """if not in_between(timestamp, max(current_hour, charging_plan[day]["start_of_day"]), timestamp + datetime.timedelta(hours=1)) or timestamp < current_hour:
+                            continue"""
                         
                         kwh_with_profit = []
                         for hour in range(timestamp.hour, 24):
@@ -4933,9 +4929,9 @@ def cheap_grid_charge_hours():
                 min_profit_per_kwh = get_min_profit_per_kwh() if only_discharge_on_profit_enabled() else 0.0
                 
                 if kwh_profit < min_profit_per_kwh:
-                    _LOGGER.warning(f"Day:{day} Not selling excess kWh due to kwh_profit:{kwh_profit} < {min_profit_per_kwh}")
+                    _LOGGER.warning(f"Day:{day} {timestamp} Not selling excess kWh due to kwh_profit:{kwh_profit} < {min_profit_per_kwh}")
                     continue
-                
+                _LOGGER.info(f"Day:{day} Selling excess kWh at timestamp:{timestamp} price:{price} battery_kwh_cost:{battery_kwh_cost} profit per kWh:{kwh_profit} excess_kwh_available_current_hour:{excess_kwh_available_current_hour} excess_profit:{excess_profit} excess_kwh_available before selling:{excess_kwh_available}kWh")
                 excess_kwh_available -= excess_kwh_available_current_hour
                 
                 if timestamp in charging_plan[day]["discharge_timestamps"]:
@@ -7006,7 +7002,6 @@ def load_kwh_prices():
         
     def set_default_values(name):
         global KWH_AVG_PRICES_DB
-        nonlocal force_save
         if name not in KWH_AVG_PRICES_DB:
             KWH_AVG_PRICES_DB[name] = {}
             
@@ -7017,20 +7012,14 @@ def load_kwh_prices():
             for d in range(7):
                 if d not in KWH_AVG_PRICES_DB[name][h]:
                     KWH_AVG_PRICES_DB[name][h][d] = []
-                    
-        force_save = True
-    
-    version = 1.0
-    force_save = False
     
     try:
         filename = f"{__name__}_kwh_avg_prices_db"
         TASKS[f'{func_prefix}load_yaml'] = task.create(load_yaml, filename)
         done, pending = task.wait({TASKS[f'{func_prefix}load_yaml']})
         database = TASKS[f'{func_prefix}load_yaml'].result()
-        
+        _LOGGER.info(f"Loaded {__name__}_kwh_avg_prices_db: {database}")
         if "version" in database:
-            version = float(database["version"])
             del database["version"]
         
         KWH_AVG_PRICES_DB = deepcopy(database)
@@ -7057,13 +7046,11 @@ def load_kwh_prices():
         
     for name in ("history", "history_sell"):
         if name not in KWH_AVG_PRICES_DB:
-            version = 2.0
             set_default_values(name)
     
     for name in ("max", "mean", "min"):
         if name not in KWH_AVG_PRICES_DB:
             KWH_AVG_PRICES_DB[name] = []
-            force_save = True
     
 def save_kwh_prices():
     global KWH_AVG_PRICES_DB
@@ -7080,6 +7067,12 @@ def append_kwh_prices():
     
     if len(KWH_AVG_PRICES_DB) == 0:
         load_kwh_prices()
+    
+    last_save = KWH_AVG_PRICES_DB.get("last_save", None)
+    if isinstance(last_save, datetime.datetime):
+        if last_save.date() == getTime().date():
+            _LOGGER.info("KWH avg prices already updated today, skipping append")
+            return
     
     if CONFIG['prices']['entity_ids']['power_prices_entity_id'] in state.names(domain="sensor"):
         power_prices_attr = get_attr(CONFIG['prices']['entity_ids']['power_prices_entity_id'], error_state={})
@@ -7117,13 +7110,17 @@ def append_kwh_prices():
             transmissions_nettarif = attr["additional_tariffs"]["transmissions_nettarif"]
             systemtarif = attr["additional_tariffs"]["systemtarif"]
             elafgift = attr["additional_tariffs"]["elafgift"]
-            
+        
+        added = 0
         day_of_week = getDayOfWeek()
         
         for h in range(24):
+            if h not in today:
+                continue
+            
             KWH_AVG_PRICES_DB['history'][h][day_of_week].insert(0, today[h] - get_refund())
             KWH_AVG_PRICES_DB['history'][h][day_of_week] = KWH_AVG_PRICES_DB['history'][h][day_of_week][:max_length]
-            
+            added += 1
             if is_solar_configured():
                 tariffs = 0.0
                 
@@ -7143,6 +7140,12 @@ def append_kwh_prices():
                 sell_price = round(sell_price, 3)
                 KWH_AVG_PRICES_DB['history_sell'][h][day_of_week].insert(0, sell_price)
                 KWH_AVG_PRICES_DB['history_sell'][h][day_of_week] = KWH_AVG_PRICES_DB['history_sell'][h][day_of_week][:max_length]
+        
+        if added < 23:
+            _LOGGER.warning(f"Missing some hours in today's power prices, not saving to database. Added hours: {added}")
+            return
+        
+        KWH_AVG_PRICES_DB['last_save'] = getTime()
         
         save_kwh_prices()
 
@@ -7246,7 +7249,7 @@ if INITIALIZATION_COMPLETE:
             set_charging_rule(f"📟{i18n.t('ui.startup.loading_db')}")
             log_lines.append(f"📟{i18n.t('ui.startup.loading_db')}")
             
-            TASKS[f"{func_prefix}update_grid_prices"] = task.create(update_grid_prices)
+            TASKS[f"{func_prefix}update_grid_prices"] = task.create(update_grid_prices, initial_run=True)
             TASKS[f"{func_prefix}load_power_values_db"] = task.create(load_power_values_db)
             TASKS[f"{func_prefix}load_solar_available_db"] = task.create(load_solar_available_db)
             TASKS[f"{func_prefix}load_kwh_prices"] = task.create(load_kwh_prices)
