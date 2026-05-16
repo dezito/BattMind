@@ -4354,7 +4354,44 @@ def cheap_grid_charge_hours():
                         
                     if timestamp not in charging_plan[day]["discharge_timestamps"]:
                         charging_plan[day]["discharge_timestamps"].append(timestamp)
-                        
+                    
+                _LOGGER.error(f"battery_level_needed for day {day}: sum({sum(battery_level_needed):.2f}%): {battery_level_needed}")
+    
+    def bt_cell(day, hour):
+        try:
+            return f"{sum(charging_plan[day]['battery_level_flow'][hour]):>5.1f}%"
+        except Exception as e:
+            return "--%"
+    
+    def battery_levels_report(name="", title="", logtype="error"):
+        nonlocal func_name
+        _LOGGER = globals()['_LOGGER'].getChild(f"{func_name}.{name}")
+        
+        # Byg tabellen
+        header_builder = []
+        for i in range(amount_of_days):
+            header_builder.append(f"{i:^10}")
+        hdr = f"{'Hour':>10} | " + " | ".join(header_builder)
+        sep   = "-" * len(hdr)
+        lines = [f"{title} {name}", hdr, sep]
+        
+        for hour in range(24):
+            string_builder = []
+            for i in range(amount_of_days):
+                string_builder.append(f"{bt_cell(i, hour):^10}")
+            line = f"{hour:>10} | " + " | ".join(string_builder)
+            lines.append(line)
+
+        for line in lines:
+            if logtype == "error":
+                _LOGGER.error(line)
+            elif logtype == "info":
+                _LOGGER.info(line)
+            elif logtype == "warning":
+                _LOGGER.warning(line)
+            else:
+                _LOGGER.debug(line)
+            
     def future_charging(totalCost, totalkWh):
         nonlocal func_name
         sub_func_name = "future_charging"
@@ -4362,12 +4399,6 @@ def cheap_grid_charge_hours():
         
         global TASKS
         nonlocal battery_expenses
-        
-        def bt_cell(day, hour):
-            try:
-                return f"{sum(charging_plan[day]['battery_level_flow'][hour]):>5.1f}%"
-            except Exception as e:
-                return "--%"
         
         def add_charging_session_to_day(timestamp, what_day, battery_level_id, reason = "unknown"):
             nonlocal func_name, sub_func_name
@@ -4591,25 +4622,6 @@ def cheap_grid_charge_hours():
                     persistent_notification_id=f"{__name__}_{func_name}_{sub_func_name}_{sub_sub_func_name}_error_{day}"
                 )
                 raise Exception(f"Error in cheapest_hour_fill_planner day:{day}: {e} {type(e)}")
-            
-            
-            # Byg tabellen
-            header_builder = []
-            for i in range(amount_of_days):
-                header_builder.append(f"{i:^10}")
-            hdr = f"{'Hour':>10} | " + " | ".join(header_builder)
-            sep   = "-" * len(hdr)
-            lines = [f"After {func_name}", hdr, sep]
-            
-            for hour in range(24):
-                string_builder = []
-                for i in range(amount_of_days):
-                    string_builder.append(f"{bt_cell(i, hour):^10}")
-                line = f"{hour:>10} | " + " | ".join(string_builder)
-                lines.append(line)
-
-            for line in lines:
-                _LOGGER.error(line)
 
         def most_expensive_planner(day):
             nonlocal func_name, sub_func_name
@@ -4731,24 +4743,6 @@ def cheap_grid_charge_hours():
                     persistent_notification_id=f"{__name__}_{func_name}_{sub_func_name}_{sub_sub_func_name}_error_{day}"
                 )
                 raise Exception(f"Error in most_expensive_planner day:{day}: {e} {type(e)}")
-            
-            # Byg tabellen
-            header_builder = []
-            for i in range(amount_of_days):
-                header_builder.append(f"{i:^10}")
-            hdr = f"{'Hour':>10} | " + " | ".join(header_builder)
-            sep   = "-" * len(hdr)
-            lines = [f"After {func_name}", hdr, sep]
-            
-            for hour in range(24):
-                string_builder = []
-                for i in range(amount_of_days):
-                    string_builder.append(f"{bt_cell(i, hour):^10}")
-                line = f"{hour:>10} | " + " | ".join(string_builder)
-                lines.append(line)
-
-            for line in lines:
-                _LOGGER.error(line)
 
         def needed_before_max_level_planner(day):
             nonlocal func_name, sub_func_name
@@ -5182,17 +5176,20 @@ def cheap_grid_charge_hours():
                 "func": most_expensive_planner
             },
         }
-        
+                
         for day in sorted([key for key in charging_plan.keys() if isinstance(key, int)]):
             for rule_priority in sorted(charging_rules.keys()):
                 if not charging_rules[rule_priority]['enabled_func']:
                     continue
+                
                 
                 TASKS[f"{func_prefix}{charging_rules[rule_priority]['name']}_{day}"] = task.create(charging_rules[rule_priority]['func'], day)
                 done, pending = task.wait({TASKS[f"{func_prefix}{charging_rules[rule_priority]['name']}_{day}"]})
                 
                 TASKS[f"{func_prefix}battery_level_flow_prediction_recalc_{day}"] = task.create(battery_level_flow_prediction_recalc)
                 done, pending = task.wait({TASKS[f"{func_prefix}battery_level_flow_prediction_recalc_{day}"]})
+                
+                battery_levels_report(name=f"{sub_func_name}.{charging_rules[rule_priority]['name']}", title=f"After {charging_rules[rule_priority]['name']} for day {day}", logtype="warning")
                         
         TASKS[f"{func_prefix}battery_level_flow_prediction_recalc_final_recalc"] = task.create(battery_level_flow_prediction_recalc, final_recalc = True)
         done, pending = task.wait({TASKS[f"{func_prefix}battery_level_flow_prediction_recalc_final_recalc"]})
@@ -5393,13 +5390,7 @@ def cheap_grid_charge_hours():
         }
         if not charging_plan[day]['rules']:
             charging_plan[day]['rules'].append("no_rule")
-    
-    def bt_cell(day, hour):
-        try:
-            return f"{sum(charging_plan[day]['battery_level_flow'][hour]):>5.1f}%"
-        except Exception as e:
-            return "--%"
-        
+            
     # Byg tabellen
     header_builder = []
     for i in range(amount_of_days):
@@ -5467,12 +5458,6 @@ def cheap_grid_charge_hours():
         raise Exception(f"Error in future_charging: {e} {type(e)}")
     finally:
         task_cancel(func_prefix, task_remove=True, startswith=True)
-    
-    def bt_cell(day, hour):
-        try:
-            return f"{sum(charging_plan[day]['battery_level_flow'][hour]):>5.1f}%"
-        except Exception as e:
-            return "--%"
         
     # Byg tabellen
     header_builder = []
