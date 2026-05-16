@@ -4118,7 +4118,6 @@ def cheap_grid_charge_hours():
     grid_prices = deepcopy(hour_prices)
     grid_sell_prices = deepcopy(get_hour_prices(sell_prices=True))
     
-    energy_prediction_db = deepcopy(LOCAL_ENERGY_PREDICTION_DB)
     battery_expenses = deepcopy(BATTERY_LEVEL_EXPENSES)
 
     current_hour = reset_time_to_hour()
@@ -4286,8 +4285,11 @@ def cheap_grid_charge_hours():
             percentage_added = grid_added
             
             try:
-                percentage_kwh = energy_prediction_db.get('solar_prediction', {}).get(day, {}).get('total', [])[hour]
-                percentage_added += round(kwh_to_percentage(percentage_kwh, include_charging_loss = True), 2)
+                solar_percentage = kwh_to_percentage(charging_plan[day]['solar_kwh_prediction'][hour], include_charging_loss = True)
+                percentage_added += solar_percentage
+                
+                max_charging_percentage = kwh_to_percentage(CONFIG['solar']['powerwall_charging_power_limit'] / 1000.0, include_charging_loss = True)
+                percentage_added = min(percentage_added, max_charging_percentage)
             except Exception as e:
                 pass
             
@@ -4301,17 +4303,18 @@ def cheap_grid_charge_hours():
                 
             if timestamp in charging_plan[day]["force_discharge_timestamps"]:
                 percentage_used = kwh_to_percentage(charging_plan[day]["force_discharge_timestamps"][timestamp]['kwh'], include_charging_loss = True) * -1
-            
-            if (battery_level + percentage_added + percentage_used) < CONFIG['solar']['powerwall_battery_level_min']:
-                charging_plan[day]['battery_level_flow'][hour] = [CONFIG['solar']['powerwall_battery_level_min']]
-                percentage_used = percentage_added * -1
-            elif (battery_level + percentage_added + percentage_used) > CONFIG['solar']['powerwall_battery_level_max']:
-                charging_plan[day]['battery_level_flow'][hour] = [CONFIG['solar']['powerwall_battery_level_max']]
                 percentage_added = 0.0
-                percentage_used = 0.0
+                
+            power_balance = percentage_added + percentage_used
             
-            charging_plan[day]['battery_level_flow'][hour].append(percentage_added)
-            charging_plan[day]['battery_level_flow'][hour].append(percentage_used)
+            if (battery_level + power_balance) <= CONFIG['solar']['powerwall_battery_level_min']:
+                charging_plan[day]['battery_level_flow'][hour] = [CONFIG['solar']['powerwall_battery_level_min']]
+                power_balance = 0.0
+            elif (battery_level + power_balance) >= CONFIG['solar']['powerwall_battery_level_max']:
+                charging_plan[day]['battery_level_flow'][hour] = [CONFIG['solar']['powerwall_battery_level_max']]
+                power_balance = 0.0
+            
+            charging_plan[day]['battery_level_flow'][hour].append(power_balance)
             
             if sum(charging_plan[day]['battery_level_flow'][hour]) > CONFIG['solar']['powerwall_battery_level_max']:
                 charging_plan[day]['battery_level_flow'][hour] = [CONFIG['solar']['powerwall_battery_level_max']]
