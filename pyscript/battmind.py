@@ -5346,8 +5346,7 @@ def cheap_grid_charge_hours():
                         "cost": [],
                         "avg_price": 0.0,
                         "total_cost": 0.0,
-                        "total_kwh": 0.0,
-                        "total_kwh_not_removed": 0.0
+                        "total_kwh": 0.0
                     }
                 
                 grouped_dict[dict_key]['hours'].append(sorted_hour)
