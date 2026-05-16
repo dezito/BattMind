@@ -5051,7 +5051,16 @@ def cheap_grid_charge_hours():
             
             battery_kwh_cost_raw, battery_loss_cost, battery_kwh_cost = _get_predicted_battery_cost(day)
             
+            using_grid_sell_price = True
             grid_sell_prices_for_day = {timestamp: price for timestamp, price in grid_sell_prices.items() if in_between(timestamp, charging_plan[day]['start_of_day'], lowest_timestamp + datetime.timedelta(hours=1))}
+            sell_price = float(get_state(f"input_number.{__name__}_solar_sell_fixed_price", float_type=True, error_state=CONFIG['solar']['production_price']))
+            
+            if sell_price != -1.0:
+                using_grid_sell_price = False
+                
+                for timestamp in grid_sell_prices_for_day:
+                    grid_price = grid_sell_prices_for_day[timestamp]
+                    grid_sell_prices_for_day[timestamp] = max(round(sell_price - grid_price, 2), 0.0)
             
             exclude_hours = get_exclude_sell_hours()
             
@@ -5098,6 +5107,11 @@ def cheap_grid_charge_hours():
                     if what_day != day:
                         other_day = f"<br><center>**({charging_plan[day]['start_of_day'].date().strftime('%d/%m')})**</center>"
                     
+                    fixed_price_calc_text = ""
+                    if not using_grid_sell_price:
+                        fixed_price_calc_text = f"{sell_price:.2f} - {grid_sell_prices.get(timestamp, 0.0):.2f} ="
+                        
+                    
                     charging_plan[what_day]["force_discharge_timestamps"][timestamp] = {
                         "kwh": excess_kwh_available_current_hour,
                         "profit": excess_profit,
@@ -5107,7 +5121,7 @@ def cheap_grid_charge_hours():
                             f"Charge/Discharge loss: **{battery_loss_cost:.2f} valuta/kWh**<br>"
                             f"Wear cost per kWh: **{abs(CONFIG['solar']['powerwall_wear_cost_per_kwh']):.2f} valuta/kWh**<br>"
                             f"**Samlet battery kWh cost**: **{battery_kwh_cost:.2f} valuta/kWh**<br>"
-                            f"Grid price: **{price:.2f} valuta/kWh**<br>"
+                            f"Grid price: **{fixed_price_calc_text}{price:.2f} valuta/kWh**<br>"
                             f"Excess kWh sold: **{excess_kwh_available_current_hour:.2f} kWh**<br>"
                             f"Profit from selling: **{excess_profit:.2f} valuta**<br>"
                             "</details>"
