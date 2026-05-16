@@ -148,6 +148,8 @@ BATTERY_LEVEL_EXPENSES = {}
 CHARGING_PLAN = {}
 CHARGE_HOURS = {}
 
+CURRENT_SESSION_RULES = {}
+
 LOCAL_ENERGY_PRICES = {
     "solar_kwh_price": {},
     "powerwall_kwh_price": {},
@@ -991,6 +993,10 @@ def get_debug_info_sections():
         "Tariff Settings": {
             "table": None,
             "details": format_debug_details({"SOLAR_SELL_TARIFF": SOLAR_SELL_TARIFF}),
+        },
+        "Current Session Rules": {
+            "table": None,
+            "details": format_debug_details({"CURRENT_SESSION_RULES": CURRENT_SESSION_RULES}),
         },
     }
 
@@ -2406,6 +2412,13 @@ def set_entity_friendlynames():
             _LOGGER.info(f"Setting sensor.{entry['entity_name']}.name: {name}")
             set_attr(f"sensor.{entry['entity_name']}.name", name)
 
+def active_charging_rules(data):
+    active_rules = {}
+    for key, value in data.items():
+        if value is True and key in CHARGING_TYPES:
+            active_rules[key] = True
+    return active_rules
+
 def emoji_description():
     func_name = "emoji_description"
     _LOGGER = globals()['_LOGGER'].getChild(func_name)
@@ -3063,7 +3076,7 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
         f"{_discharge_color(discharge_label)} | "
         f"{savings_label} |"
     )
-    align = "|:---|---:|---:|:---:|:---:|:---:|"
+    align = "|:---:|---:|---:|:---:|:---:|:---:|"
 
     history_loop_append("<center>\n")
     history_loop_append(header)
@@ -3105,8 +3118,10 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
         d_cost = _num(discharged.get("cost", 0.0))
         savings = discharged.get("savings", None)
         savings_num = float(savings) if isinstance(savings, (int, float)) else 0.0
+        
+        rules = session.get("rules", {}) if isinstance(session.get("rules", {}), dict) else {}
 
-        return prices, c_kwh, c_pct, c_cost, c_local, c_grid, d_kwh, d_pct, d_cost, savings_num
+        return prices, c_kwh, c_pct, c_cost, c_local, c_grid, d_kwh, d_pct, d_cost, savings_num, rules
 
     def _can_combine(base_when: datetime.datetime, next_when: datetime.datetime) -> bool:
         """
@@ -3129,7 +3144,7 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
             continue
 
         # read base
-        prices, c_kwh, c_pct, c_cost, c_local, c_grid, d_kwh, d_pct, d_cost, savings_num = _read_session(session)
+        prices, c_kwh, c_pct, c_cost, c_local, c_grid, d_kwh, d_pct, d_cost, savings_num, rules = _read_session(session)
 
         # Skip truly empty
         if c_kwh <= 0.0 and d_kwh <= 0.0 and c_pct <= 0.0 and d_pct <= 0.0 and savings_num == 0.0:
@@ -3159,7 +3174,7 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
                 if not _can_combine(when, next_when):
                     break
 
-                n_prices, nc_kwh, nc_pct, nc_cost, nc_local, nc_grid, nd_kwh, nd_pct, nd_cost, nsavings_num = _read_session(next_session)
+                n_prices, nc_kwh, nc_pct, nc_cost, nc_local, nc_grid, nd_kwh, nd_pct, nd_cost, nsavings_num, n_rules = _read_session(next_session)
                 
                 if n_prices.get("buy_price", None):
                     total_prices["buy_price"].append(n_prices.get("buy_price", None))
@@ -3192,6 +3207,8 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
 
                 started = next_when  # oldest timestamp in the daily block
                 j += 1
+                
+                rules.update(n_rules)  # keep newest rules in block (they will be the same for the day, but just in case)
 
             idx = j
         else:
@@ -3224,6 +3241,7 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
                 "price": _round_or_none(d_cost / d_kwh if d_kwh else None, 3),
                 "savings": _round_or_none(savings_num, 3),
             },
+            "rules": rules,
         }
 
         # Totals (based on combined block)
@@ -3302,12 +3320,18 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
                 time_str = f"**{started.strftime('%d/%m')}**"
             else:
                 time_str = f"**{started.strftime('%d/%m %H:%M')}**"
+            
+            rules_without_solar = deepcopy(rules)
+            rules_without_solar.pop("solar", None)
+            emoji_str = f"<br>{emoji_text_format(emoji_parse(rules_without_solar), group_size=3)}" if rules else ""
 
             # % column: charge on first line (green), discharge on second line (red) if both exist
             pct_lines = []
             if c_kwh > 0.0 or c_pct > 0.0:
                 pct_lines = [_charge_color(f"{int(c_pct)}")]
-                if c_local_pct > 0.0:
+                if c_local_pct > 0.0 and int(c_local_pct) == int(c_pct):
+                    pct_lines = [f"{_solar_color(f'{int(c_local_pct)}')}"]
+                elif c_local_pct > 0.0:
                     pct_lines.append(f"{_solar_color(f'({int(c_local_pct)})')}")
             if d_kwh > 0.0 or d_pct > 0.0:
                 pct_lines.append(_discharge_color(f"-{int(d_pct)}"))
@@ -3350,7 +3374,7 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
             sav_str = "<br>".join(sav_lines) if round(savings_num, 2) != 0.0 else ""
 
             if pct_str or kwh_str or charge_price_str or discharge_price_str:
-                history_loop_append(f"| {time_str} | {pct_str} | {kwh_str} | {_charge_color(charge_price_str)} | {_discharge_color(discharge_price_str)} | {sav_str} |")
+                history_loop_append(f"| {time_str}{emoji_str} | {pct_str} | {kwh_str} | {_charge_color(charge_price_str)} | {_discharge_color(discharge_price_str)} | {sav_str} |")
             current_history_counter += 1
 
         # close details at end
@@ -3565,7 +3589,7 @@ async def charging_history(timestamp=None, save_db = True):
     func_prefix = f"{func_name}_"
     func_id = random.randint(100000, 999999)
     _LOGGER = globals()['_LOGGER'].getChild(func_name)
-    global CHARGING_HISTORY_DB, TASKS, BATTERY_LEVEL_EXPENSES
+    global CHARGING_HISTORY_DB, CURRENT_SESSION_RULES, TASKS, BATTERY_LEVEL_EXPENSES
     
     if not BATTERY_LEVEL_EXPENSES or save_db:
         current_battery_level_expenses()
@@ -3699,6 +3723,7 @@ async def charging_history(timestamp=None, save_db = True):
                 task_cancel(func_prefix, task_remove=True, startswith=True)
         
         session_dict = {
+            "rules": CURRENT_SESSION_RULES,
             "prices": {
                 "buy_price": round(buy_price, 3) if isinstance(buy_price, (int, float)) else None,
                 "sell_price": round(sell_price, 3) if isinstance(sell_price, (int, float)) else None,
@@ -3730,7 +3755,9 @@ async def charging_history(timestamp=None, save_db = True):
         
         if not save_db:
             return session_dict
-            
+        
+        CURRENT_SESSION_RULES = {}
+        
         try:
             charging_history_combine_and_set()
             save_charging_history()
@@ -6978,7 +7005,7 @@ def charge_if_needed():
     func_name = "charge_if_needed"
     func_prefix = f"{func_name}_"
     _LOGGER = globals()['_LOGGER'].getChild(func_name)
-    global CHARGE_HOURS, TASKS
+    global CHARGE_HOURS, CURRENT_SESSION_RULES, TASKS
     
     try:
         if deactivate_script_enabled():
@@ -6997,9 +7024,7 @@ def charge_if_needed():
         
         powerwall_watt_flow = int(get_average_value(CONFIG['home']['entity_ids']['powerwall_watt_flow_entity_id'], from_timestamp, to_timestamp, convert_to="W", error_state=0.0))
         inverter_watt_solar_only = get_state(CONFIG['solar']['entity_ids']['production_entity_id'], float_type=True, error_state=0.0)
-        
-        currentHour = reset_time_to_hour()
-        
+                
         if no_charging_modes_active():
             _LOGGER.info("No charging modes active, setting amps to max")
             amps = [CONFIG['charger']['charging_phases'], CONFIG['charger']['charging_max_amp']]
@@ -7013,6 +7038,7 @@ def charge_if_needed():
                 timestamp = charge_hour
                 powerwall_action = "grid_charging"
                 
+                CURRENT_SESSION_RULES.update(active_charging_rules(CHARGE_HOURS[timestamp]))
                 emoji = emoji_parse(CHARGE_HOURS[timestamp])
                 charging_rule = i18n.t('ui.charge_if_needed.planned_charging', emoji=emoji)
                 _LOGGER.info(f"Charging because of {emoji} {CHARGE_HOURS[timestamp]['Price']}{i18n.t('ui.common.valuta')}. ({MAX_KWH_CHARGING}kWh)")
@@ -7026,12 +7052,16 @@ def charge_if_needed():
                 timestamp = force_discharge_hour
                 powerwall_action = "force_discharge"
                 
+                CURRENT_SESSION_RULES.update(active_charging_rules(CHARGE_HOURS[timestamp]))
                 emoji = emoji_parse({'error': True})
                 charging_rule = i18n.t('ui.charge_if_needed.force_discharge')
             else:
                 _LOGGER.info("No rules for charging")
                 charging_rule = i18n.t('ui.charge_if_needed.not_charging')
                 
+        if inverter_watt_solar_only > 0:
+            CURRENT_SESSION_RULES.update({"solar": True})
+            
         if powerwall_watt_flow != 0:
             flow = powerwall_watt_flow
             # Normaliser så:
@@ -7044,7 +7074,7 @@ def charge_if_needed():
             key = 'charging_watt' if is_charging else 'discharging_watt'
 
             charging_rule += (
-                f"\n{i18n.t(f'ui.charge_if_needed.{key}', watt=powerwall_watt_flow)}"
+                f"\n{emoji_parse(CURRENT_SESSION_RULES)}{i18n.t(f'ui.charge_if_needed.{key}', watt=powerwall_watt_flow)}"
                 f"{emoji_parse({'average': True})}"
             )
                 
