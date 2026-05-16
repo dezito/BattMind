@@ -120,7 +120,7 @@ CURRENT_CHARGING_AMPS = [0, 0, 0]
 ERROR_COUNT = 0
 
 ENTITY_UNAVAILABLE_STATES = (None, "unavailable", "unknown")
-POWERWALL_ACTION_STATES = ("grid_charging", "discharge_allowed", "force_solar_only_charging", "force_discharge", "force_charge")
+POWERWALL_ACTION_STATES = ("grid_charging", "discharge_allowed", "force_solar_only_charging", "force_discharge")
 
 FORECAST_TYPE = "ema"
 
