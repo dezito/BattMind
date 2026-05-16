@@ -4304,18 +4304,11 @@ def cheap_grid_charge_hours():
             
             if (battery_level + percentage_added + percentage_used) < CONFIG['solar']['powerwall_battery_level_min']:
                 charging_plan[day]['battery_level_flow'][hour] = [CONFIG['solar']['powerwall_battery_level_min']]
-                diff = percentage_added + percentage_used
-                diff_kwh = percentage_to_kwh(diff)
-                
-                charging_plan[day]['hour_cost_prediction'][FORECAST_TYPE][hour]['kwh_not_removed'] = diff_kwh
                 percentage_used = percentage_added * -1
             elif (battery_level + percentage_added + percentage_used) > CONFIG['solar']['powerwall_battery_level_max']:
                 charging_plan[day]['battery_level_flow'][hour] = [CONFIG['solar']['powerwall_battery_level_max']]
-                charging_plan[day]['hour_cost_prediction'][FORECAST_TYPE][hour]['kwh_not_removed'] = 0.0
                 percentage_added = 0.0
                 percentage_used = 0.0
-            else:
-                charging_plan[day]['hour_cost_prediction'][FORECAST_TYPE][hour]['kwh_not_removed'] = 0.0
             
             charging_plan[day]['battery_level_flow'][hour].append(percentage_added)
             charging_plan[day]['battery_level_flow'][hour].append(percentage_used)
@@ -5289,21 +5282,18 @@ def cheap_grid_charge_hours():
             charging_plan[day]['hour_cost_prediction']['ema'][hour] = {
                 "percentage": kwh_to_percentage(ema),
                 "kwh": ema,
-                "kwh_not_removed": ema,
                 "price": hour_prices.get(dt, 0.0),
                 "cost": hour_prices.get(dt, 0.0) * ema
             }
             charging_plan[day]['hour_cost_prediction']['trend'][hour] = {
                 "percentage": kwh_to_percentage(trend),
                 "kwh": trend,
-                "kwh_not_removed": trend,
                 "price": hour_prices.get(dt, 0.0),
                 "cost": hour_prices.get(dt, 0.0) * trend
             }
             charging_plan[day]['hour_cost_prediction']['avg'][hour] = {
                 "percentage": kwh_to_percentage(avg),
                 "kwh": avg,
-                "kwh_not_removed": avg,
                 "price": hour_prices.get(dt, 0.0),
                 "cost": hour_prices.get(dt, 0.0) * avg
             }
@@ -5326,13 +5316,11 @@ def cheap_grid_charge_hours():
                         grouped_dict[dict_key]["avg_price"] = average(grouped_dict[dict_key]["price"])
                         grouped_dict[dict_key]["total_cost"] = sum(grouped_dict[dict_key]["cost"])
                         grouped_dict[dict_key]["total_kwh"] = sum(grouped_dict[dict_key]["kwh"])
-                        grouped_dict[dict_key]["total_kwh_not_removed"] = sum(grouped_dict[dict_key]["kwh_not_removed"])
-                        
+
                     dict_key = sorted_hour
                     grouped_dict[dict_key] = {
                         "hours": [],
                         "kwh": [],
-                        "kwh_not_removed": [],
                         "price": [],
                         "cost": [],
                         "avg_price": 0.0,
@@ -5343,7 +5331,6 @@ def cheap_grid_charge_hours():
                 
                 grouped_dict[dict_key]['hours'].append(sorted_hour)
                 grouped_dict[dict_key]['kwh'].append(charging_plan[day]['hour_cost_prediction'][forecast_type][sorted_hour]['kwh'])
-                grouped_dict[dict_key]['kwh_not_removed'].append(charging_plan[day]['hour_cost_prediction'][forecast_type][sorted_hour]['kwh_not_removed'])
                 grouped_dict[dict_key]['price'].append(charging_plan[day]['hour_cost_prediction'][forecast_type][sorted_hour]['price'])
                 grouped_dict[dict_key]['cost'].append(charging_plan[day]['hour_cost_prediction'][forecast_type][sorted_hour]['cost'])
                 
@@ -5872,12 +5859,11 @@ def cheap_grid_charge_hours():
             overview.append("<details>\n")
             overview.append(f"<summary>🔎 Day {day} (discharge kwh: <b>{charging_plan[day]['discharge_kwh']:.1f}kWh</b>)</summary>\n")
             
-            overview.append("| First | Hours | kwh<br>needed | kwh<br>not removed | price | cost |")
-            overview.append("|:---:|:---:|:---:|:---:|:---:|:---:|")
+            overview.append("| First | Hours | kwh<br>needed | price | cost |")
+            overview.append("|:---:|:---:|:---:|:---:|:---:|")
             for hour in charging_plan[day]['grouped_sorted_hour_cost_prediction'][FORECAST_TYPE]:
                 hours = charging_plan[day]['grouped_hour_cost_prediction'][FORECAST_TYPE][hour]['hours']
                 kwh = charging_plan[day]['grouped_hour_cost_prediction'][FORECAST_TYPE][hour]['total_kwh']
-                kwh_not_removed = charging_plan[day]['grouped_hour_cost_prediction'][FORECAST_TYPE][hour]['total_kwh_not_removed']
                 cost = charging_plan[day]['grouped_hour_cost_prediction'][FORECAST_TYPE][hour]['total_cost']
                 
                 price = charging_plan[day]['grouped_hour_cost_prediction'][FORECAST_TYPE][hour]['avg_price']
@@ -5885,16 +5871,14 @@ def cheap_grid_charge_hours():
                 hour_string = f"<font color=red>{hour:02d}</font>"
                 hours_string = "<font color=red>" + ", ".join([f"{h:02d}" for h in hours]) + "</font>"
                 kwh_string = f"<font color=red>{kwh:.1f}</font>" if kwh > 0.0 else f""
-                kwh_not_removed_string = f"<font color=red>{kwh_not_removed:.1f}</font>" if kwh_not_removed > 0.0 else f""
                 price_string = f"{price:.2f}"
                 cost_string = f"<font color=red>{cost:.2f}</font>"
                 
-                overview.append(f"| **{hour_string}** | {hours_string} | {kwh_string} | {kwh_not_removed_string} | {price_string} | {cost_string} |")
+                overview.append(f"| **{hour_string}** | {hours_string} | {kwh_string} | {price_string} | {cost_string} |")
                 
             for hour in charging_plan[day]['grouped_sorted_hour_cost_prediction']["trend"]:
                 hours = charging_plan[day]['grouped_hour_cost_prediction']["trend"][hour]['hours']
                 kwh = charging_plan[day]['grouped_hour_cost_prediction']["trend"][hour]['total_kwh']
-                kwh_not_removed = charging_plan[day]['grouped_hour_cost_prediction']["trend"][hour]['total_kwh_not_removed']
                 cost = charging_plan[day]['grouped_hour_cost_prediction']["trend"][hour]['total_cost']
                 
                 price = charging_plan[day]['grouped_hour_cost_prediction']["trend"][hour]['avg_price']
@@ -5902,16 +5886,14 @@ def cheap_grid_charge_hours():
                 hour_string = f"<font color=yellow>{hour:02d}</font>"
                 hours_string = "<font color=yellow>" + ", ".join([f"{h:02d}" for h in hours]) + "</font>"
                 kwh_string = f"<font color=yellow>{kwh:.1f}</font>" if kwh > 0.0 else f""
-                kwh_not_removed_string = f"<font color=yellow>{kwh_not_removed:.1f}</font>" if kwh_not_removed > 0.0 else f""
                 price_string = f"{price:.2f}"
                 cost_string = f"<font color=yellow>{cost:.2f}</font>"
                 
-                overview.append(f"| **{hour_string}** | {hours_string} | {kwh_string} | {kwh_not_removed_string} | {price_string} | {cost_string} |")
+                overview.append(f"| **{hour_string}** | {hours_string} | {kwh_string} | {price_string} | {cost_string} |")
                 
             for hour in charging_plan[day]['grouped_sorted_hour_cost_prediction']["avg"]:
                 hours = charging_plan[day]['grouped_hour_cost_prediction']["avg"][hour]['hours']
                 kwh = charging_plan[day]['grouped_hour_cost_prediction']["avg"][hour]['total_kwh']
-                kwh_not_removed = charging_plan[day]['grouped_hour_cost_prediction']["avg"][hour]['total_kwh_not_removed']
                 cost = charging_plan[day]['grouped_hour_cost_prediction']["avg"][hour]['total_cost']
                 
                 price = charging_plan[day]['grouped_hour_cost_prediction']["avg"][hour]['avg_price']
@@ -5919,11 +5901,10 @@ def cheap_grid_charge_hours():
                 hour_string = f"<font color=green>{hour:02d}</font>"
                 hours_string = "<font color=green>" + ", ".join([f"{h:02d}" for h in hours]) + "</font>"
                 kwh_string = f"<font color=green>{kwh:.1f}</font>" if kwh > 0.0 else f""
-                kwh_not_removed_string = f"<font color=green>{kwh_not_removed:.1f}</font>" if kwh_not_removed > 0.0 else f""
                 price_string = f"{price:.2f}"
                 cost_string = f"<font color=green>{cost:.2f}</font>"
                 
-                overview.append(f"| **{hour_string}** | {hours_string} | {kwh_string} | {kwh_not_removed_string} | {price_string} | {cost_string} |")
+                overview.append(f"| **{hour_string}** | {hours_string} | {kwh_string} | {price_string} | {cost_string} |")
                 
             overview.append("</details>\n")
                     
@@ -5976,13 +5957,10 @@ def cheap_grid_charge_hours():
             overview.append("|:---:|:---:|:---:|:---:|:---:|:---:|")
             for hour in charging_plan[day]['hour_cost_prediction']["ema"].keys():
                 ema_kwh = charging_plan[day]['hour_cost_prediction']["ema"][hour]['kwh']
-                ema_kwh_not_removed = charging_plan[day]['hour_cost_prediction']["ema"][hour]['kwh_not_removed']
                 ema_cost = charging_plan[day]['hour_cost_prediction']["ema"][hour]['cost']
                 trend_kwh = charging_plan[day]['hour_cost_prediction']["trend"][hour]['kwh']
-                trend_kwh_not_removed = charging_plan[day]['hour_cost_prediction']["trend"][hour]['kwh_not_removed']
                 trend_cost = charging_plan[day]['hour_cost_prediction']["trend"][hour]['cost']
                 avg_kwh = charging_plan[day]['hour_cost_prediction']["avg"][hour]['kwh']
-                avg_kwh_not_removed = charging_plan[day]['hour_cost_prediction']["avg"][hour]['kwh_not_removed']
                 avg_cost = charging_plan[day]['hour_cost_prediction']["avg"][hour]['cost']
                 
                 price = charging_plan[day]['hour_cost_prediction']["ema"][hour]['price']
@@ -5990,7 +5968,6 @@ def cheap_grid_charge_hours():
                 battery_level = round(sum(charging_plan[day]['battery_level_flow'][hour]), 1)
                 
                 kwh_string = f"<font color=red>{ema_kwh:.1f}</font> <br> <font color=yellow>{trend_kwh:.1f}</font> / <font color=green>{avg_kwh:.1f}</font>" if ema_kwh > 0.0 or trend_kwh > 0.0 or avg_kwh > 0.0 else f""
-                kwh_not_removed_string = f"<font color=red>{ema_kwh_not_removed:.1f}</font> <br> <font color=yellow>{trend_kwh_not_removed:.1f} / <font color=green>{avg_kwh_not_removed:.1f}</font>" if ema_kwh_not_removed > 0.0 or trend_kwh_not_removed > 0.0 or avg_kwh_not_removed > 0.0 else f""
                 price_string = f"{price:.2f}"
                 cost_string = f"<font color=red>{ema_cost:.2f}</font> <br> <font color=yellow>{trend_cost:.2f}</font> / <font color=green>{avg_cost:.2f}</font>"
                 
@@ -6002,7 +5979,7 @@ def cheap_grid_charge_hours():
                     
                 last_battery_level = battery_level
                 
-                overview.append(f"| **{hour:02d}** | {kwh_string} | {kwh_not_removed_string} | {price_string} | {cost_string} | **{battery_level_string}** |")
+                overview.append(f"| **{hour:02d}** | {kwh_string} | {price_string} | {cost_string} | **{battery_level_string}** |")
                 
             overview.append("</details>\n")
                     
