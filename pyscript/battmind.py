@@ -2454,7 +2454,6 @@ def join_unique_emojis(str1: str, str2: str) -> str:
 def emoji_text_format(text, group_size=3):
     _LOGGER = globals()['_LOGGER'].getChild("emoji_text_format")
     words = text.split()
-    _LOGGER.info(f"Formatting emojis: {text} into groups of {group_size}")
 
     grouped_text = []
     string_builder = []
@@ -5066,11 +5065,9 @@ def cheap_grid_charge_hours():
             
             for i in range(discharge_hours_needed):
                 if round(excess_kwh_available, 1) <= 0.0:
-                    _LOGGER.info(f"No more excess_kwh_available:{excess_kwh_available}kWh, stopping selling excess kWh for day:{day}")
                     break
                 
                 if i >= discharge_hours_needed:
-                    _LOGGER.info(f"Discharge hours needed {discharge_hours_needed} reached for day:{day}, stopping selling excess kWh")
                     break
                 
                 for timestamp, price in sorted(grid_sell_prices_for_day.items(), key=lambda kv: (kv[1], kv[0]), reverse=True):
@@ -5093,10 +5090,9 @@ def cheap_grid_charge_hours():
                     min_profit_per_kwh = get_min_profit_per_kwh() if only_discharge_on_profit_enabled() else 0.0
                     
                     if kwh_profit < min_profit_per_kwh:
-                        _LOGGER.warning(f"Day:{day} Skipping selling excess kWh at timestamp:{timestamp} due to low profit per kWh:{kwh_profit:.2f} which is less than min_profit_per_kwh:{min_profit_per_kwh:.2f} (price:{price:.2f} - battery_kwh_cost:{battery_kwh_cost:.2f})")
+                        _LOGGER.debug(f"Day:{day} Skipping selling excess kWh at timestamp:{timestamp} due to low profit per kWh:{kwh_profit:.2f} which is less than min_profit_per_kwh:{min_profit_per_kwh:.2f} (price:{price:.2f} - battery_kwh_cost:{battery_kwh_cost:.2f})")
                         continue
                     
-                    _LOGGER.info(f"Day:{day} Selling excess kWh at timestamp:{timestamp} price:{price} battery_kwh_cost:{battery_kwh_cost} profit per kWh:{kwh_profit} excess_kwh_available_current_hour:{excess_kwh_available_current_hour} excess_profit:{excess_profit} excess_kwh_available before selling:{excess_kwh_available}kWh")
                     excess_kwh_available -= excess_kwh_available_current_hour
                     
                     if timestamp in charging_plan[day]["discharge_timestamps"]:
@@ -5807,9 +5803,9 @@ def cheap_grid_charge_hours():
             overview.append("</center>\n")
     except Exception as e:
         _LOGGER.error(f"Failed to create solar over production overview: {e} {type(e)}")
-        _LOGGER.error(f"solar_over_production: {solar_over_production}")
-        _LOGGER.error(f"charging_plan:\n{pformat(charging_plan, width=200, compact=True)}")
-        _LOGGER.error(f"chargeHours:\n{pformat(chargeHours, width=200, compact=True)}")
+        #_LOGGER.error(f"solar_over_production: {solar_over_production}")
+        #_LOGGER.error(f"charging_plan:\n{pformat(charging_plan, width=200, compact=True)}")
+        #_LOGGER.error(f"chargeHours:\n{pformat(chargeHours, width=200, compact=True)}")
         
     try:
         overview.append("<center>\n")
