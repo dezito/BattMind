@@ -4427,7 +4427,6 @@ def cheap_grid_charge_hours():
                     from_hour = timestamp.hour if day == days else 0
                     
                     battery_level_flow_prediction(day, from_hour, reset_hour = True)
-                    
             except Exception as e:
                 _LOGGER.error(f"Error in {sub_sub_func_name} battery_level_added:{battery_level_added}: {e} {type(e)}")
                 my_persistent_notification(
@@ -4442,7 +4441,7 @@ def cheap_grid_charge_hours():
             sub_sub_func_name = "cheapest_hour_fill_planner"
             _LOGGER = globals()['_LOGGER'].getChild(f"{func_name}.{sub_func_name}.{sub_sub_func_name}")
             
-            nonlocal totalCost, totalkWh, charging_plan, chargeHours, sorted_by_cheapest_price
+            nonlocal totalCost, totalkWh, charging_plan, chargeHours, sorted_by_cheapest_price, current_hour
                         
             _LOGGER.warning(f"---------------------------------{day} cheapest_hour_fill_planner {charging_plan[day]['day_text']} {day}---------------------------------")
             
@@ -4540,6 +4539,10 @@ def cheap_grid_charge_hours():
                         
                         timestamp = cheap_timestamp - datetime.timedelta(hours=i)
                         price = hour_prices[timestamp]
+                        what_day = daysBetween(current_hour, timestamp)
+                        
+                        if what_day < day - 1:
+                            continue
                         
                         cheapest_price_diff = price - cheapest_price if cheapest_price is not None else None
                         if cheapest_price_diff is not None and cheapest_price_diff > cheapest_price_rise_threshold:
@@ -4566,14 +4569,15 @@ def cheap_grid_charge_hours():
                         
                         hour_in_chargeHours, kwh_available = kwh_available_in_hour(timestamp)
                         
-                        kwh_available = min(sum(kwh_with_profit), percentage_to_kwh(max(CONFIG['solar']['powerwall_battery_level_max'] - highest_battery_level, 0.0), include_charging_loss = True), percentage_to_kwh(CONFIG['solar']['powerwall_battery_level_max'] - CONFIG['solar']['powerwall_battery_level_min'], include_charging_loss = True))
+                        timestamp_battery_level = charging_plan[what_day]['battery_level_flow'].get(timestamp.hour, [0.0])
+                        battery_level_to_use = max(sum(timestamp_battery_level), highest_battery_level)
                         
+                        kwh_from_battery_level_used = percentage_to_kwh(max(CONFIG['solar']['powerwall_battery_level_max'] - battery_level_to_use, 0.0), include_charging_loss = True)
+                        full_charge_kwh_needed = percentage_to_kwh(CONFIG['solar']['powerwall_battery_level_max'] - CONFIG['solar']['powerwall_battery_level_min'], include_charging_loss = True)
+                        
+                        kwh_available = min(sum(kwh_with_profit), kwh_from_battery_level_used, full_charge_kwh_needed)
                         
                         if hour_in_chargeHours and kwh_available <= 0.0:
-                            continue
-                                     
-                        what_day = daysBetween(current_hour, timestamp)
-                        if what_day < day - 1:
                             continue
                         
                         battery_level_id = "battery_level_start_of_day" if what_day < 0 else "battery_level_end_of_day"
