@@ -200,6 +200,8 @@ entity:
       name: "Ladehistorie"
     powerwall_action:
       name: "Powerwall-Aktion"
+    battery_level_needed:
+      name: "Erforderlicher Batteriestand bis zur nächsten Ladung"
 
 # ---- ui ----
 ui:

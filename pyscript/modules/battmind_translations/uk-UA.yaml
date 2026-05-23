@@ -200,6 +200,8 @@ entity:
       name: "Історія заряджання"
     powerwall_action:
       name: "Дія домашньої батареї"
+    battery_level_needed:
+      name: "Необхідний рівень батареї до наступного заряджання"
 
 # ---- ui ----
 ui:

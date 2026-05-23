@@ -200,6 +200,8 @@ entity:
       name: "Charging history"
     powerwall_action:
       name: "Powerwall action"
+    battery_level_needed:
+      name: "Required battery level until next charge"
 
 # ---- ui ----
 ui:
