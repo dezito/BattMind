@@ -5611,7 +5611,6 @@ def cheap_grid_charge_hours():
     
     for day in charging_plan.keys():
         if not isinstance(day, int):
-            _LOGGER.info(f"Skipping non-int day in discharge_timestamps: {day}")
             continue
         
         start_of_day = charging_plan[day]['start_of_day']
@@ -5749,7 +5748,6 @@ def cheap_grid_charge_hours():
         
         overview.append("<center>\n")
         overview.append(f"## 📖 {i18n.t('ui.cheap_grid_charge_hours.charging_overview_title')} ##")
-        _LOGGER.warning(f"merged_intervals: {merged_intervals}")
         if merged_intervals:
             overview.append(f"|  | {i18n.t('ui.common.time')} | % | kWh | {i18n.t('ui.common.valuta_kwh')} | {i18n.t('ui.common.price')} |")
             overview.append("|---:|:---:|---:|---:|:---:|---:|")
