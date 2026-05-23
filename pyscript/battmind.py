@@ -5258,6 +5258,7 @@ def cheap_grid_charge_hours():
                 if not charging_rules[rule_priority]['enabled_func']:
                     continue
                 
+                #battery_levels_report(name=f"{sub_func_name}.{charging_rules[rule_priority]['name']}", title=f"Before {charging_rules[rule_priority]['name']} for day {day}", logtype="info")
                 
                 TASKS[f"{func_prefix}{charging_rules[rule_priority]['name']}_{day}"] = task.create(charging_rules[rule_priority]['func'], day)
                 done, pending = task.wait({TASKS[f"{func_prefix}{charging_rules[rule_priority]['name']}_{day}"]})
@@ -5265,7 +5266,7 @@ def cheap_grid_charge_hours():
                 TASKS[f"{func_prefix}battery_level_flow_prediction_recalc_{day}"] = task.create(battery_level_flow_prediction_recalc)
                 done, pending = task.wait({TASKS[f"{func_prefix}battery_level_flow_prediction_recalc_{day}"]})
                 
-                battery_levels_report(name=f"{sub_func_name}.{charging_rules[rule_priority]['name']}", title=f"After {charging_rules[rule_priority]['name']} for day {day}", logtype="warning")
+                #battery_levels_report(name=f"{sub_func_name}.{charging_rules[rule_priority]['name']}", title=f"After {charging_rules[rule_priority]['name']} for day {day}", logtype="warning")
                         
         TASKS[f"{func_prefix}battery_level_flow_prediction_recalc_final_recalc"] = task.create(battery_level_flow_prediction_recalc, final_recalc = True)
         done, pending = task.wait({TASKS[f"{func_prefix}battery_level_flow_prediction_recalc_final_recalc"]})
