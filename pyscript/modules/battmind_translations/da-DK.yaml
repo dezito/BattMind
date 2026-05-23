@@ -204,6 +204,8 @@ entity:
       name: "Lade historik"
     powerwall_action:
       name: "Powerwall handling"
+    battery_level_needed:
+      name: "Nødvendigt batteriniveau indtil næste ladning"
 
 # ---- ui ----
 ui:
