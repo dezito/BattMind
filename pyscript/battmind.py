@@ -6035,8 +6035,8 @@ def cheap_grid_charge_hours():
             overview.append("<details>\n")
             overview.append(f"<summary>🔎 Day {day} (discharge kwh: **{charging_plan[day]['discharge_kwh']:.1f}kWh**)</summary>\n")
             
-            overview.append("| Hour | kwh<br>needed | kwh<br>not removed | price | cost | 🔋 |")
-            overview.append("|:---:|:---:|:---:|:---:|:---:|:---:|")
+            overview.append("| Hour | kwh<br>needed | price | cost | 🔋 |")
+            overview.append("|:---:|:---:|:---:|:---:|:---:|")
             for hour in charging_plan[day]['hour_cost_prediction']["ema"].keys():
                 ema_kwh = charging_plan[day]['hour_cost_prediction']["ema"][hour]['kwh']
                 ema_cost = charging_plan[day]['hour_cost_prediction']["ema"][hour]['cost']
