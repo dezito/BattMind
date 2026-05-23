@@ -7086,7 +7086,8 @@ def charge_if_needed():
                 timestamp = force_discharge_hour
                 powerwall_action = "force_discharge"
                 
-                CURRENT_SESSION_RULES.update(active_charging_rules(CHARGE_HOURS[timestamp]))
+                #TODO: add sell_excess_kwh_available emoji to force discharge rules
+                #CURRENT_SESSION_RULES.update(active_charging_rules({"force_discharge": True}))
                 emoji = emoji_parse({'error': True})
                 charging_rule = i18n.t('ui.charge_if_needed.force_discharge')
             else:
