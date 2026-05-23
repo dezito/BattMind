@@ -5258,6 +5258,7 @@ def cheap_grid_charge_hours():
                 if not charging_rules[rule_priority]['enabled_func']:
                     continue
                 
+                #battery_levels_report(name=f"{sub_func_name}.{charging_rules[rule_priority]['name']}", title=f"Before {charging_rules[rule_priority]['name']} for day {day}", logtype="info")
                 
                 TASKS[f"{func_prefix}{charging_rules[rule_priority]['name']}_{day}"] = task.create(charging_rules[rule_priority]['func'], day)
                 done, pending = task.wait({TASKS[f"{func_prefix}{charging_rules[rule_priority]['name']}_{day}"]})
@@ -5265,7 +5266,7 @@ def cheap_grid_charge_hours():
                 TASKS[f"{func_prefix}battery_level_flow_prediction_recalc_{day}"] = task.create(battery_level_flow_prediction_recalc)
                 done, pending = task.wait({TASKS[f"{func_prefix}battery_level_flow_prediction_recalc_{day}"]})
                 
-                battery_levels_report(name=f"{sub_func_name}.{charging_rules[rule_priority]['name']}", title=f"After {charging_rules[rule_priority]['name']} for day {day}", logtype="warning")
+                #battery_levels_report(name=f"{sub_func_name}.{charging_rules[rule_priority]['name']}", title=f"After {charging_rules[rule_priority]['name']} for day {day}", logtype="warning")
                         
         TASKS[f"{func_prefix}battery_level_flow_prediction_recalc_final_recalc"] = task.create(battery_level_flow_prediction_recalc, final_recalc = True)
         done, pending = task.wait({TASKS[f"{func_prefix}battery_level_flow_prediction_recalc_final_recalc"]})
@@ -5610,7 +5611,6 @@ def cheap_grid_charge_hours():
     
     for day in charging_plan.keys():
         if not isinstance(day, int):
-            _LOGGER.info(f"Skipping non-int day in discharge_timestamps: {day}")
             continue
         
         start_of_day = charging_plan[day]['start_of_day']
@@ -5748,7 +5748,6 @@ def cheap_grid_charge_hours():
         
         overview.append("<center>\n")
         overview.append(f"## 📖 {i18n.t('ui.cheap_grid_charge_hours.charging_overview_title')} ##")
-        _LOGGER.warning(f"merged_intervals: {merged_intervals}")
         if merged_intervals:
             overview.append(f"|  | {i18n.t('ui.common.time')} | % | kWh | {i18n.t('ui.common.valuta_kwh')} | {i18n.t('ui.common.price')} |")
             overview.append("|---:|:---:|---:|---:|:---:|---:|")
@@ -7087,7 +7086,8 @@ def charge_if_needed():
                 timestamp = force_discharge_hour
                 powerwall_action = "force_discharge"
                 
-                CURRENT_SESSION_RULES.update(active_charging_rules(CHARGE_HOURS[timestamp]))
+                #TODO: add sell_excess_kwh_available emoji to force discharge rules
+                #CURRENT_SESSION_RULES.update(active_charging_rules({"force_discharge": True}))
                 emoji = emoji_parse({'error': True})
                 charging_rule = i18n.t('ui.charge_if_needed.force_discharge')
             else:
