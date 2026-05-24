@@ -5476,7 +5476,7 @@ def cheap_grid_charge_hours():
         if not charging_plan[day]['rules']:
             charging_plan[day]['rules'].append("no_rule")
             
-    # Byg tabellen
+    """# Byg tabellen
     header_builder = []
     for i in range(amount_of_days):
         header_builder.append(f"{i:^10}")
@@ -5519,7 +5519,7 @@ def cheap_grid_charge_hours():
             lines.append(line)
 
         for line in lines:
-            _LOGGER.warning(line) if "📅" in line else _LOGGER.info(line)
+            _LOGGER.warning(line) if "📅" in line else _LOGGER.info(line)"""
 
     for timestamp, price in dict(deepcopy(sorted_by_cheapest_price)).items():
         if daysBetween(current_hour, timestamp) >= amount_of_days:
@@ -5544,7 +5544,7 @@ def cheap_grid_charge_hours():
     finally:
         task_cancel(func_prefix, task_remove=True, startswith=True)
         
-    # Byg tabellen
+    """# Byg tabellen
     header_builder = []
     for i in range(amount_of_days):
         header_builder.append(f"{i:^10}")
@@ -5560,7 +5560,7 @@ def cheap_grid_charge_hours():
         lines.append(line)
 
     for line in lines:
-        _LOGGER.info(line)
+        _LOGGER.info(line)"""
     
     chargeHours['total_cost'] = totalCost
     chargeHours['total_kwh'] = totalkWh
