@@ -3641,10 +3641,10 @@ async def charging_history(timestamp=None, save_db = True):
         solar_discharge_share_pct /= normalization_factor
         powerwall_discharge_share_pct /= normalization_factor
         
-        _LOGGER.info(f"debug {start} normalization_factor: {normalization_factor:.3f}")
-        _LOGGER.info(f"debug {start} home_consumption_kwh: {home_consumption_kwh:.3f} kWh, charge_kwh: {charge_kwh:.3f} kWh, discharge_kwh: {discharge_kwh:.3f} kWh, solar_production_kwh: {solar_production_kwh:.3f} kWh, grid_consumption_kwh: {grid_consumption_kwh:.3f} kWh")
-        _LOGGER.info(f"debug {start} charge_grid_share_pct: {charge_grid_share_pct * 100:.1f}%, discharge_grid_share_pct: {discharge_grid_share_pct * 100:.1f}%, powerwall_discharge_share_pct: {powerwall_discharge_share_pct * 100:.1f}%")
-        _LOGGER.info(f"debug {start} solar_charge_share_pct: {solar_charge_share_pct * 100:.1f}%, solar_discharge_share_pct: {solar_discharge_share_pct * 100:.1f}%")
+        _LOGGER.debug(f"{start} normalization_factor: {normalization_factor:.3f}")
+        _LOGGER.debug(f"{start} home_consumption_kwh: {home_consumption_kwh:.3f} kWh, charge_kwh: {charge_kwh:.3f} kWh, discharge_kwh: {discharge_kwh:.3f} kWh, solar_production_kwh: {solar_production_kwh:.3f} kWh, grid_consumption_kwh: {grid_consumption_kwh:.3f} kWh")
+        _LOGGER.debug(f"{start} charge_grid_share_pct: {charge_grid_share_pct * 100:.1f}%, discharge_grid_share_pct: {discharge_grid_share_pct * 100:.1f}%, powerwall_discharge_share_pct: {powerwall_discharge_share_pct * 100:.1f}%")
+        _LOGGER.debug(f"{start} solar_charge_share_pct: {solar_charge_share_pct * 100:.1f}%, solar_discharge_share_pct: {solar_discharge_share_pct * 100:.1f}%")
         
         """selling_to_grid = True if grid_consumption_kwh <= -100.0 else False
         selling_to_grid = True if solar_production_kwh >= home_consumption_kwh else selling_to_grid"""
@@ -3671,9 +3671,9 @@ async def charging_history(timestamp=None, save_db = True):
         charge_price = sum([charge_grid_share, solar_charge_share])
         discharge_price = sum([discharge_grid_share, solar_discharge_share, powerwall_discharge_share])
         
-        _LOGGER.warning(f"debug {start} buy_price: {buy_price:.3f} kr/kWh, sell_price: {sell_price:.3f} kr/kWh, powerwall_kwh_price: {powerwall_kwh_price:.3f} kr/kWh")
-        _LOGGER.warning(f"debug {start} charge_grid_share: {charge_grid_share:.3f} kr/kWh, solar_charge_share: {solar_charge_share:.3f} kr/kWh, discharge_grid_share: {discharge_grid_share:.3f} kr/kWh, solar_discharge_share: {solar_discharge_share:.3f} kr/kWh, powerwall_discharge_share: {powerwall_discharge_share:.3f} kr/kWh")
-        _LOGGER.warning(f"debug {start} charge_price: {charge_price:.3f} kr/kWh, discharge_price: {discharge_price:.3f} kr/kWh")
+        _LOGGER.debug(f"{start} buy_price: {buy_price:.3f} kr/kWh, sell_price: {sell_price:.3f} kr/kWh, powerwall_kwh_price: {powerwall_kwh_price:.3f} kr/kWh")
+        _LOGGER.debug(f"{start} charge_grid_share: {charge_grid_share:.3f} kr/kWh, solar_charge_share: {solar_charge_share:.3f} kr/kWh, discharge_grid_share: {discharge_grid_share:.3f} kr/kWh, solar_discharge_share: {solar_discharge_share:.3f} kr/kWh, powerwall_discharge_share: {powerwall_discharge_share:.3f} kr/kWh")
+        _LOGGER.debug(f"{start} charge_price: {charge_price:.3f} kr/kWh, discharge_price: {discharge_price:.3f} kr/kWh")
         
         #kwh_savings = round(buy_price - powerwall_kwh_price, 3) if isinstance(buy_price, (int, float)) and isinstance(powerwall_kwh_price, (int, float)) else None
         
@@ -4063,16 +4063,16 @@ def get_hour_prices(update_prices = False, sell_prices = False):
                         
                 if missing_hours:
                     missing_hours = dict(sorted(missing_hours.items()))
-                    _LOGGER.info(f"Using following offline prices: {missing_hours}")
+                    _LOGGER.debug(f"Using following offline prices: {missing_hours}")
                     
                     LAST_SUCCESSFUL_GRID_PRICES["missing_hours"] = missing_hours
                     
-            except Exception as e:
-                error_message = f"Cant get offline prices: {e} {type(e)}"
+            except Exception as ex:
+                error_message = f"Cant get offline prices: {ex} {type(ex)}"
                 _LOGGER.error(error_message)
                 save_error_to_file(error_message, caller_function_name = f"{func_name}()")
-                my_persistent_notification(f"Kan ikke hente offline priser: {e} {type(e)}", f"{TITLE} error", persistent_notification_id=f"{__name__}_{func_name}_offline_prices_error")
-                raise Exception(f"Offline prices error: {e} {type(e)}")
+                my_persistent_notification(f"Kan ikke hente offline priser: {ex} {type(ex)}", f"{TITLE} error", persistent_notification_id=f"{__name__}_{func_name}_offline_prices_error")
+                raise Exception(f"Offline prices error: {ex} {type(ex)}")
     
     if sell_prices:
         for timestamp, price in deepcopy(hour_prices).items():
@@ -4505,7 +4505,7 @@ def cheap_grid_charge_hours():
             
             nonlocal totalCost, totalkWh, charging_plan, chargeHours, sorted_by_cheapest_price, current_hour
                         
-            _LOGGER.warning(f"---------------------------------{day} cheapest_hour_fill_planner {charging_plan[day]['day_text']} {day}---------------------------------")
+            _LOGGER.debug(f"---------------------------------{day} cheapest_hour_fill_planner {charging_plan[day]['day_text']} {day}---------------------------------")
             
             try:
                 finished = False
@@ -4692,7 +4692,7 @@ def cheap_grid_charge_hours():
             
             nonlocal totalCost, totalkWh, charging_plan, chargeHours, sorted_by_cheapest_price
                         
-            _LOGGER.warning(f"---------------------------------{day} most_expensive_planner {charging_plan[day]['day_text']} {day}---------------------------------")
+            _LOGGER.debug(f"---------------------------------{day} most_expensive_planner {charging_plan[day]['day_text']} {day}---------------------------------")
             
             try:
                 for sorted_hour in charging_plan[day]['sorted_hour_cost_prediction'][FORECAST_TYPE]:
@@ -4813,7 +4813,7 @@ def cheap_grid_charge_hours():
             
             nonlocal totalCost, totalkWh, charging_plan, chargeHours
             
-            _LOGGER.warning(f"---------------------------------{day} needed_before_max_level_planner {charging_plan[day]['day_text']} {day}---------------------------------")
+            _LOGGER.debug(f"---------------------------------{day} needed_before_max_level_planner {charging_plan[day]['day_text']} {day}---------------------------------")
             
             
             highest_battery_level = get_battery_level() if day == 0 else sum(charging_plan[day]['battery_level_start_of_day'])
@@ -4828,7 +4828,7 @@ def cheap_grid_charge_hours():
                     highest_battery_level_timestamp = highest_battery_level_timestamp.replace(hour=hour)
 
             highest_battery_level_timestamp = current_hour if day == 0 else charging_plan[day]['end_of_day']
-            _LOGGER.error(f"Highest battery level before max level planner for day:{day} is {highest_battery_level:.1f}% at hour:{highest_battery_level_timestamp.hour}")
+            _LOGGER.debug(f"Highest battery level before max level planner for day:{day} is {highest_battery_level:.1f}% at hour:{highest_battery_level_timestamp.hour}")
             for hour in range(from_hour, highest_battery_level_timestamp.hour + 1):
                 battery_level = sum(charging_plan[day]['battery_level_flow'].get(hour, [0.0])) - CONFIG['solar']['powerwall_battery_level_min']
                 kwh_needed = kwh_needed_for_charging(charging_plan[day]['hour_cost_prediction'][FORECAST_TYPE][hour]['percentage'], battery_level)
@@ -4904,7 +4904,7 @@ def cheap_grid_charge_hours():
             
             nonlocal charging_plan
             
-            _LOGGER.warning(f"---------------------------------{day} discharge_amount {charging_plan[day]['day_text']} {day}---------------------------------")
+            _LOGGER.debug(f"---------------------------------{day} discharge_amount {charging_plan[day]['day_text']} {day}---------------------------------")
             
             discharge_kwh = 0.0
             last_battery_level = 0.0
@@ -4914,7 +4914,7 @@ def cheap_grid_charge_hours():
                         discharge_kwh += percentage_to_kwh(last_battery_level - sum(charging_plan[day]['battery_level_flow'][hour]))
                     last_battery_level = sum(charging_plan[day]['battery_level_flow'][hour])
 
-            _LOGGER.info(f"Discharge amount day:{day} discharge_kwh:{discharge_kwh}kWh")
+            _LOGGER.debug(f"Discharge amount day:{day} discharge_kwh:{discharge_kwh}kWh")
             charging_plan[day]['discharge_kwh'] = discharge_kwh
         
         def _get_predicted_battery_cost(day):
@@ -5107,7 +5107,7 @@ def cheap_grid_charge_hours():
             excess_kwh_available = percentage_to_kwh(max(lowest_battery_level - CONFIG['solar']['powerwall_battery_level_min'], 0.0), include_charging_loss = True)
             
             if using_next_day:
-                _LOGGER.info(f"Using lowest battery level of next day before battery charging for calculating excess_kwh_available for day:{day} which is at {lowest_timestamp} with battery level:{lowest_battery_level:.1f}% resulting in excess_kwh_available:{excess_kwh_available:.2f}kWh")
+                _LOGGER.debug(f"Using lowest battery level of next day before battery charging for calculating excess_kwh_available for day:{day} which is at {lowest_timestamp} with battery level:{lowest_battery_level:.1f}% resulting in excess_kwh_available:{excess_kwh_available:.2f}kWh")
             
             discharge_hours_needed = int(round_up(excess_kwh_available / (abs(CONFIG['solar']['powerwall_discharging_power']) / 1000.0)))
             
@@ -7221,7 +7221,7 @@ def calc_local_energy_kwh(from_timestamp, to_timestamp, kwh = None, solar_period
 
     watts_available_from_local_energy, watts_from_local_energy, solar_watts_of_local_energy = local_energy_available(from_timestamp=from_timestamp, to_timestamp=to_timestamp, include_local_energy_distribution = True, without_all_exclusion = True)
     
-    _LOGGER.info(f"watt:{watt} watts_available_from_local_energy:{watts_available_from_local_energy} watts_from_local_energy:{watts_from_local_energy} solar_watts_of_local_energy:{solar_watts_of_local_energy}")
+    _LOGGER.debug(f"watt:{watt} watts_available_from_local_energy:{watts_available_from_local_energy} watts_from_local_energy:{watts_from_local_energy} solar_watts_of_local_energy:{solar_watts_of_local_energy}")
     if watts_from_local_energy > watt:
         miscalculated_ratio = watts_from_local_energy / watt if watt > 0.0 else 0.0
         solar_watts_of_local_energy = solar_watts_of_local_energy * miscalculated_ratio
@@ -7229,7 +7229,7 @@ def calc_local_energy_kwh(from_timestamp, to_timestamp, kwh = None, solar_period
     
     solar_kwh_available = round(max(watts_from_local_energy, 0.0) / 1000, 3)
     solar_kwh_of_local_energy = round(solar_watts_of_local_energy / 1000, 3)
-    _LOGGER.info(f"calc_solar_kwh called with from_timestamp:{from_timestamp} to_timestamp:{to_timestamp} kwh:{kwh} solar_kwh_available:{solar_kwh_available} solar_kwh_of_local_energy:{solar_kwh_of_local_energy}")
+    _LOGGER.debug(f"calc_solar_kwh called with from_timestamp:{from_timestamp} to_timestamp:{to_timestamp} kwh:{kwh} solar_kwh_available:{solar_kwh_available} solar_kwh_of_local_energy:{solar_kwh_of_local_energy}")
 
     return round(min(solar_kwh_available, kwh), 3), solar_kwh_of_local_energy
 
