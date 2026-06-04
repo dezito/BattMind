@@ -46,6 +46,8 @@ charging_type:
     description: "Savings and revenue from discharging"
   average:
     description: "Average consumption"
+  force_discharge:
+    description: "Sell excess kWh to the grid during the most expensive hours"
 
 # ---- config ----
 config:

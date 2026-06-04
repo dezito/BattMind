@@ -46,6 +46,8 @@ charging_type:
     description: "Besparelse og salgsindtægt ved afladning"
   average:
     description: "Gennemsnitlig forbrug"
+  force_discharge:
+    description: "Sælg overskydende kWh til nettet i de dyreste timer"
 
 # ---- config ----
 config:
