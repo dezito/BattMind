@@ -4614,32 +4614,35 @@ def cheap_grid_charge_hours():
                 cheapest_price = min(day_prices.values()) if day_prices else None
                 cheapest_price_rise_threshold = get_cheapest_price_rise_threshold()
                 
+                highest_battery_level = CONFIG['solar']['powerwall_battery_level_min']
+                highest_battery_level_timestamp = charging_plan[day]["start_of_day"]
+                    
+                for hour in range(0, 24):
+                    if hour not in charging_plan[day]['battery_level_flow']:
+                        continue
+                    
+                    battery_level = sum(charging_plan[day]['battery_level_flow'].get(hour, [0.0]))
+                    
+                    if battery_level > highest_battery_level:
+                        highest_battery_level = battery_level
+                        highest_battery_level_timestamp = charging_plan[day]["start_of_day"].replace(hour=hour)
+                
+                percentage_needed_today = []
+                
+                if cheapest_hour_fill_up_enabled():
+                    percentage_needed_today = [CONFIG['solar']['powerwall_battery_level_max']]
+                else:
+                    from_hour = getHour() if day == 0 else 0
+                    for hour in range(from_hour, 24):
+                        percentage_needed_today.append(charging_plan[day]['hour_cost_prediction'][FORECAST_TYPE][hour]['percentage'])
+                
+                kwh_needed = kwh_needed_for_charging(min(sum(percentage_needed_today), CONFIG['solar']['powerwall_battery_level_max']), highest_battery_level)
+                #kwh_needed -= charging_plan[day]['solar_kwh_prediction_total']
+                
+                if kwh_needed <= 0.0:
+                    return
                 
                 for cheap_timestamp in cheap_timestamps:
-                    highest_battery_level = CONFIG['solar']['powerwall_battery_level_min']
-                    highest_battery_level_timestamp = cheap_timestamp
-                    
-                    percentage_needed_today = []
-                    
-                    if cheapest_hour_fill_up_enabled():
-                        percentage_needed_today = [CONFIG['solar']['powerwall_battery_level_max']]
-                    else:
-                        from_hour = getHour() if day == 0 else 0
-                        for hour in range(from_hour, 24):
-                            percentage_needed_today.append(charging_plan[day]['hour_cost_prediction'][FORECAST_TYPE][hour]['percentage'])
-                    
-                    for hour in range(cheap_timestamp.hour, 24):
-                        battery_level = sum(charging_plan[day]['battery_level_flow'].get(hour, [0.0]))
-                        if battery_level > highest_battery_level:
-                            highest_battery_level = battery_level
-                            highest_battery_level_timestamp = cheap_timestamp.replace(hour=hour)
-                            
-                    kwh_needed = kwh_needed_for_charging(sum(percentage_needed_today), highest_battery_level)
-                    #kwh_needed -= charging_plan[day]['solar_kwh_prediction_total']
-                    
-                    if kwh_needed <= 0.0:
-                        continue
-                            
                     for i in range(int(round_up(kwh_needed / MAX_KWH_CHARGING) + 1)):
                         if finished:
                             break
@@ -4754,11 +4757,16 @@ def cheap_grid_charge_hours():
                         continue
                     
                     remove_list = []
+                    highest_battery_level = sorted_battery_level
                     
                     for timestamp, price in sorted_by_cheapest_price:
                         from_timestamp = charging_plan[day]["start_of_day"] - datetime.timedelta(hours=6) if day > 0 else charging_plan[day]["start_of_day"]
                         to_timestamp = charging_plan[day]["end_of_day"]
+                        
                         if not in_between(timestamp, from_timestamp, to_timestamp) or timestamp < current_hour:
+                            continue
+                        
+                        if timestamp > sorted_timestamp:
                             continue
                         
                         kwh_profit = sorted_price - (price + calc_battery_loss_cost(price) + abs(CONFIG['solar']['powerwall_wear_cost_per_kwh']))
@@ -4773,16 +4781,18 @@ def cheap_grid_charge_hours():
                             continue
                         
                         highest_battery_level_timestamp = timestamp
-                        highest_battery_level = 0.0
-                        
+                        what_day = daysBetween(current_hour, timestamp)
+                        highest_battery_level = max(sum(charging_plan[what_day]['battery_level_flow'].get(timestamp.hour, [0.0])), highest_battery_level)
+                        #_LOGGER.info(f"sorted_timestamp:{sorted_timestamp}=>timestamp:{timestamp} highest_battery_level:{highest_battery_level:.1f}% hoursBetween({hoursBetween(timestamp, sorted_timestamp)})")
                         for i in range(1, hoursBetween(timestamp, sorted_timestamp) + 1):
-                            loop_day = daysBetween(getTime(), sorted_timestamp - datetime.timedelta(hours=i))
-                            loop_hour = (sorted_timestamp - datetime.timedelta(hours=i)).hour
-                            loop_battery_level = sum(charging_plan.get(loop_day, {}).get('battery_level_flow', {}).get(loop_hour, [0.0]))
+                            loop_timestamp = (sorted_timestamp - datetime.timedelta(hours=i))
+                            loop_day = daysBetween(current_hour, loop_timestamp)
+                            loop_battery_level = sum(charging_plan.get(loop_day, {}).get('battery_level_flow', {}).get(loop_timestamp.hour, [0.0]))
                             
+                            #_LOGGER.warning(f"sorted_timestamp:{sorted_timestamp}=>timestamp:{timestamp}=>loop_timestamp:{loop_timestamp} loop_battery_level:{loop_battery_level:.1f}% highest_battery_level:{highest_battery_level:.1f}%")
                             if loop_battery_level > highest_battery_level:
-                                highest_battery_level_timestamp = sorted_timestamp - datetime.timedelta(hours=i)
-                                highest_battery_level = loop_battery_level
+                                highest_battery_level_timestamp = loop_timestamp
+                                highest_battery_level = max(loop_battery_level, highest_battery_level)
                         
                         available_battery_level = CONFIG['solar']['powerwall_battery_level_max'] - max(highest_battery_level, CONFIG['solar']['powerwall_battery_level_min'])
                         available_kwh = percentage_to_kwh(available_battery_level, include_charging_loss = True)
@@ -5130,6 +5140,8 @@ def cheap_grid_charge_hours():
             
             nonlocal charging_plan, grid_prices, grid_sell_prices
             
+            tolerance = 3.0
+            
             lowest_timestamp = charging_plan[day]['end_of_day']
             lowest_battery_level = sum(charging_plan[day]['battery_level_end_of_day'])
             
@@ -5137,19 +5149,64 @@ def cheap_grid_charge_hours():
             
             if not use_midnight_battery_level_enabled():
                 if day < amount_of_days - 1:
-                    timestamp = charging_plan[day + 1]['start_of_day']
+                    """timestamp = charging_plan[day + 1]['start_of_day']
                     
                     for hour in range(24):
                         battery_level = sum(charging_plan[day + 1]['battery_level_flow'].get(hour, [0.0]))
-                        if battery_level > lowest_battery_level or battery_level == CONFIG['solar']['powerwall_battery_level_min']:
+                        if battery_level > lowest_battery_level + tolerance or battery_level == CONFIG['solar']['powerwall_battery_level_min']:
                             break
+                        _LOGGER.info(f"Day:{day} Checking battery level for next day at hour:{hour} battery_level:{battery_level:.1f}% lowest_battery_level:{lowest_battery_level:.1f}%")
+                        if battery_level < lowest_battery_level:
+                            using_next_day = True
+                            lowest_battery_level = battery_level
+                            lowest_timestamp = timestamp.replace(hour=hour)"""
+                    for hour in range(24):
+                        timestamp = charging_plan[day + 1]['start_of_day'] + datetime.timedelta(hours=hour)
+                        what_day = daysBetween(charging_plan[0]['start_of_day'], timestamp)
+                        loop_hour = timestamp.hour
+                        
+                        if what_day not in charging_plan or loop_hour not in charging_plan[what_day]['battery_level_flow']:
+                            continue
+                        
+                        battery_level = sum(charging_plan[what_day]['battery_level_flow'].get(loop_hour, None))
+                        
+                        if battery_level is None:
+                            continue
+                        
+                        """if battery_level > lowest_battery_level + tolerance or battery_level == CONFIG['solar']['powerwall_battery_level_min']:
+                            break
+                            no_remaining_battery_level_found = True
+                            
+                            for remaining_hour in range(hour, hour+3):
+                                remaining_timestamp = charging_plan[day]['end_of_day'] + datetime.timedelta(hours=remaining_hour)
+                                remaining_what_day = daysBetween(charging_plan[day]['end_of_day'], remaining_timestamp)
+                                remaining_loop_hour = remaining_timestamp.hour
+                                if remaining_what_day in charging_plan and remaining_loop_hour in charging_plan[remaining_what_day]['battery_level_flow']:
+                                    remaining_battery_level = sum(charging_plan[remaining_what_day]['battery_level_flow'].get(remaining_loop_hour, [0.0]))
+                                    
+                                    tolerance = 3.0
+                                    diff = remaining_battery_level - lowest_battery_level
+                                    if diff > tolerance:
+                                        lowest_battery_level = remaining_battery_level
+                                        lowest_timestamp = remaining_timestamp
+                                        no_remaining_battery_level_found = False
+                                        _LOGGER.warning(f"Battery level rose above lowest battery level with more than tolerance of {tolerance}% in the next 3 hours, diff:{diff}%, remaining_timestamp:{remaining_timestamp}, remaining_battery_level:{remaining_battery_level}%, lowest_timestamp:{lowest_timestamp}, lowest_battery_level:{lowest_battery_level}%")
+                            break
+                            if no_remaining_battery_level_found:
+                                _LOGGER.error(f"Battery level rose above lowest battery level or is at minimum battery level, and no remaining battery level found with more than tolerance of 3% in the next 3 hours, lowest_timestamp:{lowest_timestamp}, lowest_battery_level:{lowest_battery_level}%")
+                                break"""
                         
                         if battery_level < lowest_battery_level:
                             using_next_day = True
                             lowest_battery_level = battery_level
-                            lowest_timestamp = timestamp.replace(hour=hour)
+                            lowest_timestamp = timestamp
                         
-            excess_kwh_available = percentage_to_kwh(max(lowest_battery_level - CONFIG['solar']['powerwall_battery_level_min'], 0.0), include_charging_loss = True)
+                        if lowest_battery_level == CONFIG['solar']['powerwall_battery_level_min']:
+                            _LOGGER.warning(f"Lowest battery level reached minimum battery level at timestamp:{lowest_timestamp}, breaking")
+                            break
+            
+            lowest_battery_level = lowest_battery_level - CONFIG['solar']['powerwall_battery_level_min']
+            excess_kwh_available = percentage_to_kwh(max(lowest_battery_level, 0.0), include_charging_loss = True)
             
             if using_next_day:
                 _LOGGER.debug(f"Using lowest battery level of next day before battery charging for calculating excess_kwh_available for day:{day} which is at {lowest_timestamp} with battery level:{lowest_battery_level:.1f}% resulting in excess_kwh_available:{excess_kwh_available:.2f}kWh")
