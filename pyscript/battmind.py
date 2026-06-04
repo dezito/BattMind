@@ -5208,6 +5208,14 @@ def cheap_grid_charge_hours():
             lowest_battery_level = lowest_battery_level - CONFIG['solar']['powerwall_battery_level_min']
             excess_kwh_available = percentage_to_kwh(max(lowest_battery_level, 0.0), include_charging_loss = True)
             
+            if lowest_battery_level <= 5.0:
+                _LOGGER.warning(f"Lowest battery level for day:{day} is {lowest_battery_level:.1f}% at timestamp:{lowest_timestamp}, which is at or below 5%, skipping selling excess kWh to preserve battery health")
+                return
+            
+            if excess_kwh_available <= 1.0:
+                _LOGGER.warning(f"Excess kWh available for day:{day} is {excess_kwh_available:.2f}kWh at lowest battery level of {lowest_battery_level:.1f}% at timestamp:{lowest_timestamp}, which is at or below 1.0kWh, skipping selling excess kWh")
+                return
+            
             if using_next_day:
                 _LOGGER.debug(f"Using lowest battery level of next day before battery charging for calculating excess_kwh_available for day:{day} which is at {lowest_timestamp} with battery level:{lowest_battery_level:.1f}% resulting in excess_kwh_available:{excess_kwh_available:.2f}kWh")
             
