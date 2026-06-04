@@ -219,6 +219,10 @@ CHARGING_TYPES = {
         "priority": 4.2,
         "emoji": "❌",
     },
+    "force_discharge": {
+        "priority": 5,
+        "emoji": "🛒",
+    },
     "solar": {
         "priority": 6,
         "emoji": "☀️",
@@ -7090,20 +7094,19 @@ def charge_if_needed():
                 emoji = emoji_parse(CHARGE_HOURS[timestamp])
                 charging_rule = i18n.t('ui.charge_if_needed.planned_charging', emoji=emoji)
                 _LOGGER.info(f"Charging because of {emoji} {CHARGE_HOURS[timestamp]['Price']}{i18n.t('ui.common.valuta')}. ({MAX_KWH_CHARGING}kWh)")
+            elif force_discharge_hour:
+                timestamp = force_discharge_hour
+                powerwall_action = "force_discharge"
+                
+                CURRENT_SESSION_RULES.update(active_charging_rules({"force_discharge": True}))
+                emoji = emoji_parse({'error': True})
+                charging_rule = i18n.t('ui.charge_if_needed.force_discharge')
             elif discharge_hour:
                 timestamp = discharge_hour
                 powerwall_action = "discharge_allowed"
                 
                 emoji = emoji_parse({'error': True})
                 charging_rule = i18n.t('ui.charge_if_needed.discharge_allowed')
-            elif force_discharge_hour:
-                timestamp = force_discharge_hour
-                powerwall_action = "force_discharge"
-                
-                #TODO: add sell_excess_kwh_available emoji to force discharge rules
-                #CURRENT_SESSION_RULES.update(active_charging_rules({"force_discharge": True}))
-                emoji = emoji_parse({'error': True})
-                charging_rule = i18n.t('ui.charge_if_needed.force_discharge')
             else:
                 _LOGGER.info("No rules for charging")
                 charging_rule = i18n.t('ui.charge_if_needed.not_charging')

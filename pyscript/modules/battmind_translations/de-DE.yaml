@@ -46,6 +46,8 @@ charging_type:
     description: "Ersparnis und Verkaufserlös durch Entladung"
   average:
     description: "Durchschnittlicher Verbrauch"
+  force_discharge:
+    description: "Überschüssige kWh in den teuersten Stunden ins Netz einspeisen"
 
 # ---- config ----
 config:
