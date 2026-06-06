@@ -5217,16 +5217,22 @@ def cheap_grid_charge_hours():
                         if lowest_battery_level == CONFIG['solar']['powerwall_battery_level_min']:
                             _LOGGER.warning(f"Lowest battery level reached minimum battery level at timestamp:{lowest_timestamp}, breaking")
                             break
-            
+            lowest_battery_level = round(lowest_battery_level, 0)
             lowest_battery_level = lowest_battery_level - CONFIG['solar']['powerwall_battery_level_min']
             excess_kwh_available = percentage_to_kwh(max(lowest_battery_level, 0.0), include_charging_loss = True)
             
-            if lowest_battery_level <= 5.0:
-                _LOGGER.warning(f"Lowest battery level for day:{day} is {lowest_battery_level:.1f}% at timestamp:{lowest_timestamp}, which is at or below 5%, skipping selling excess kWh to preserve battery health")
-                return
+            min_sell_kwh = 0.5
             
-            if excess_kwh_available <= 1.0:
+            if excess_kwh_available < min_sell_kwh and excess_kwh_available > 0.0:
                 _LOGGER.warning(f"Excess kWh available for day:{day} is {excess_kwh_available:.2f}kWh at lowest battery level of {lowest_battery_level:.1f}% at timestamp:{lowest_timestamp}, which is at or below 1.0kWh, skipping selling excess kWh")
+                charging_plan[day]["force_discharge_timestamps_empty"] = (
+                        f"<details><summary>⚠️Ingen gode tidspunkter at sælge overskydende kWh på, da tilgængelige kWh er for lavt ({excess_kwh_available:.1f}kWh)</summary>"
+                        f"Laveste batteriniveau timestamp: **{lowest_timestamp}**<br>"
+                        f"Laveste batteriniveau: **{lowest_battery_level:.1f}%**<br>"
+                        f"Batteri kWh tilgængelig at sælge: **{excess_kwh_available:.2f} kWh**<br>"
+                        f"Minimum kWh at sælge: **{min_sell_kwh:.2f} kWh**<br>"
+                        "</details>"
+                        )
                 return
             
             if using_next_day:
