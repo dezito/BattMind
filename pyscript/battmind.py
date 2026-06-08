@@ -3665,8 +3665,8 @@ async def charging_history(timestamp=None, save_db = True):
             powerwall_kwh_price = get_powerwall_kwh_price()
         
         charge_grid_share = buy_price * charge_grid_share_pct
-        discharge_grid_share = buy_price * discharge_grid_share_pct
         
+        discharge_grid_share = sell_price * discharge_grid_share_pct
         solar_charge_share = sell_price * solar_charge_share_pct
         solar_discharge_share = sell_price * solar_discharge_share_pct
         
