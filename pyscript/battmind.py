@@ -2901,8 +2901,10 @@ def get_powerwall_kwh_price(kwh = None, timestamp=None): #TODO use predicted pri
     
     powerwall_kwh = sum(powerwall_kwh)
     powerwall_total_cost = sum(powerwall_total_cost)
+    powerwall_kwh_cost = powerwall_total_cost / powerwall_kwh if powerwall_kwh > 0.0 else 0.0
+    powerwall_kwh_cost = powerwall_kwh_cost + calc_battery_loss_cost(powerwall_kwh_cost) + abs(CONFIG['solar']['powerwall_wear_cost_per_kwh'])
     
-    return powerwall_total_cost / powerwall_kwh if powerwall_kwh > 0.0 else 0.0
+    return powerwall_kwh_cost
 
 def kwh_to_percentage(kwh, include_charging_loss=False):
     return kwh / CONFIG['solar']['powerwall_battery_size'] * 100
