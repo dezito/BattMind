@@ -4988,7 +4988,7 @@ def cheap_grid_charge_hours():
             _LOGGER.debug(f"Discharge amount day:{day} discharge_kwh:{discharge_kwh}kWh")
             charging_plan[day]['discharge_kwh'] = discharge_kwh
         
-        def _get_predicted_battery_cost(day):
+        def _get_predicted_battery_cost(day, predicted_battery_level=None):
             nonlocal func_name, sub_func_name
             sub_sub_func_name = "get_predicted_battery_cost"
             _LOGGER = globals()['_LOGGER'].getChild(f"{func_name}.{sub_func_name}.{sub_sub_func_name}")
@@ -4998,20 +4998,11 @@ def cheap_grid_charge_hours():
             total_grid_solar_kwh = []
             total_grid_cost_prediction = []
             
-            if charging_plan[day]['solar_kwh_prediction_total'] is not None:
-                for hour in range(current_hour.hour, 24):
-                    if charging_plan[day]['solar_kwh_prediction'][hour] <= 0.0:
-                        continue
-                    
-                    total_grid_solar_kwh.append(charging_plan[day]['solar_kwh_prediction'][hour])
-                    total_grid_cost_prediction.append(charging_plan[day]['solar_cost_prediction'][hour])
-                
-            for timestamp, charging_session in charging_plan[day]['charging_sessions'].items():
-                if timestamp >= current_hour:
-                    total_grid_solar_kwh.append(charging_session['kWh'])
-                    total_grid_cost_prediction.append(charging_session['Cost'])
+            battery_level = predicted_battery_level
             
-            battery_level = get_battery_level() if day == 0 else sum(charging_plan[day]['battery_level_end_of_day'])
+            if battery_level is None:
+                battery_level = get_battery_level() if day == 0 else sum(charging_plan[day]['battery_level_end_of_day'])
+                
             powerwall_kwh = percentage_to_kwh(battery_level, include_charging_loss=True)
             powerwall_kwh_price = battery_expenses.get("unit", None)
             
@@ -5020,6 +5011,40 @@ def cheap_grid_charge_hours():
             
             total_grid_solar_kwh.append(powerwall_kwh)
             total_grid_cost_prediction.append(powerwall_kwh_price * powerwall_kwh)
+            
+            for hour in range(current_hour.hour, 24):
+                timestamp = current_hour.replace(hour=hour) + datetime.timedelta(days=day)
+                if hour in charging_plan[day]['solar_kwh_prediction']:
+                    if charging_plan[day]['solar_kwh_prediction'][hour] > 0.0:
+                        total_grid_solar_kwh.append(charging_plan[day]['solar_kwh_prediction'][hour])
+                        total_grid_cost_prediction.append(charging_plan[day]['solar_cost_prediction'][hour])
+                    
+                if timestamp in charging_plan[day]['charging_sessions']:
+                    charging_session = charging_plan[day]['charging_sessions'][timestamp]
+                    total_grid_solar_kwh.append(charging_session['kWh'])
+                    total_grid_cost_prediction.append(charging_session['Cost'])
+            
+            if predicted_battery_level:
+                predicted_kwh = percentage_to_kwh(predicted_battery_level, include_charging_loss=True)
+                new_kwh = []
+                new_cost = []
+
+                for kwh, cost in zip(total_grid_solar_kwh, total_grid_cost_prediction):
+                    if predicted_kwh <= 0:
+                        break
+
+                    if kwh <= predicted_kwh:
+                        new_kwh.append(kwh)
+                        new_cost.append(cost)
+                        predicted_kwh -= kwh
+                    else:
+                        factor = predicted_kwh / kwh
+                        new_kwh.append(predicted_kwh)
+                        new_cost.append(cost * factor)
+                        predicted_kwh = 0
+
+                total_grid_solar_kwh = new_kwh
+                total_grid_cost_prediction = new_cost
             
             battery_kwh_cost_raw = (sum(total_grid_cost_prediction)) / sum(total_grid_solar_kwh) if sum(total_grid_solar_kwh) > 0.0 else 0.0
             battery_loss_cost = calc_battery_loss_cost(battery_kwh_cost_raw)
@@ -5034,7 +5059,6 @@ def cheap_grid_charge_hours():
             
             nonlocal charging_plan, grid_prices
             
-            battery_kwh_cost_raw, battery_loss_cost, battery_kwh_cost = _get_predicted_battery_cost(day)
             
             for hour in range(24):
                 if hour not in charging_plan[day]['battery_level_flow']:
@@ -5053,6 +5077,8 @@ def cheap_grid_charge_hours():
                 if price is None:
                     continue
                 
+                battery_level = charging_plan[day]['battery_level_flow'].get(hour, None)
+                battery_kwh_cost_raw, battery_loss_cost, battery_kwh_cost = _get_predicted_battery_cost(day, predicted_battery_level = sum(battery_level) if battery_level is not None else None)
                 min_profit_per_kwh = get_min_profit_per_kwh()
                 profit = price - battery_kwh_cost
                 
@@ -5241,8 +5267,6 @@ def cheap_grid_charge_hours():
             
             discharge_hours_needed = int(round_up(excess_kwh_available / (abs(CONFIG['solar']['powerwall_discharging_power']) / 1000.0)))
             
-            battery_kwh_cost_raw, battery_loss_cost, battery_kwh_cost = _get_predicted_battery_cost(day)
-            
             using_grid_sell_price = True
             grid_sell_prices_for_day = {timestamp: price for timestamp, price in grid_sell_prices.items() if in_between(timestamp, charging_plan[day]['start_of_day'], lowest_timestamp + datetime.timedelta(hours=1))}
             sell_price = float(get_state(f"input_number.{__name__}_solar_sell_fixed_price", float_type=True, error_state=CONFIG['solar']['production_price']))
@@ -5276,12 +5300,16 @@ def cheap_grid_charge_hours():
                         _LOGGER.warning(f"Excluding timestamp:{timestamp} from selling excess kWh due to exclude_hours setting")
                         continue
                     
+                    what_day = daysBetween(current_hour, timestamp)
+                    battery_level = charging_plan[what_day]['battery_level_flow'].get(timestamp.hour, None)
+                    loop_battery_kwh_cost_raw, loop_battery_loss_cost, loop_battery_kwh_cost = _get_predicted_battery_cost(day, predicted_battery_level = sum(battery_level) if battery_level is not None else None)
+                    
                     excess_kwh_available_current_hour = min(excess_kwh_available, (abs(CONFIG['solar']['powerwall_discharging_power']) / 1000.0))
                     
                     excess_profit = excess_kwh_available_current_hour * price
-                    excess_profit -= excess_kwh_available_current_hour * battery_kwh_cost
+                    excess_profit -= excess_kwh_available_current_hour * loop_battery_kwh_cost
                     
-                    kwh_profit = price - battery_kwh_cost
+                    kwh_profit = price - loop_battery_kwh_cost
                     min_profit_per_kwh = get_min_profit_per_kwh() if only_discharge_on_profit_enabled() else 0.0
                     
                     if kwh_profit < min_profit_per_kwh:
@@ -5293,8 +5321,6 @@ def cheap_grid_charge_hours():
                     if timestamp in charging_plan[day]["discharge_timestamps"]:
                         charging_plan[day]["discharge_timestamps"].remove(timestamp)
                     
-                    what_day = daysBetween(current_hour, timestamp)
-                    
                     other_day = ""
                     if what_day != day:
                         other_day = f"<br><center>**({charging_plan[day]['start_of_day'].date().strftime('%d/%m')})**</center>"
@@ -5302,25 +5328,39 @@ def cheap_grid_charge_hours():
                     fixed_price_calc_text = ""
                     if not using_grid_sell_price:
                         fixed_price_calc_text = f"{sell_price:.2f} - {grid_sell_prices.get(timestamp, 0.0):.2f} ="
-                        
                     
                     charging_plan[what_day]["force_discharge_timestamps"][timestamp] = {
                         "kwh": excess_kwh_available_current_hour,
                         "profit": excess_profit,
                         "reason": (
                             f"<details><summary>{emoji_parse({'discharging': True})}Sælger overskydende kWh ({excess_profit:.2f}){other_day}</summary>"
-                            f"Battery kWh cost (basis): **{battery_kwh_cost_raw:.2f} valuta/kWh**<br>"
-                            f"Charge/Discharge loss: **{battery_loss_cost:.2f} valuta/kWh**<br>"
+                            f"Battery kWh cost (basis): **{loop_battery_kwh_cost_raw:.2f} valuta/kWh**<br>"
+                            f"Charge/Discharge loss: **{loop_battery_loss_cost:.2f} valuta/kWh**<br>"
                             f"Wear cost per kWh: **{abs(CONFIG['solar']['powerwall_wear_cost_per_kwh']):.2f} valuta/kWh**<br>"
-                            f"**Samlet battery kWh cost**: **{battery_kwh_cost:.2f} valuta/kWh**<br>"
+                            f"**Samlet battery kWh cost**: **{loop_battery_kwh_cost:.2f} valuta/kWh**<br>"
                             f"Grid price: **{fixed_price_calc_text}{price:.2f} valuta/kWh**<br>"
                             f"Excess kWh sold: **{excess_kwh_available_current_hour:.2f} kWh**<br>"
                             f"Profit from selling: **{excess_profit:.2f} valuta**<br>"
                             "</details>"
                         ),
                         }
+                    if day == 0 and getHour() == timestamp.hour and getMinute() == 0:
+                        my_persistent_notification(
+                            f"""{emoji_parse({'discharging': True})}Sælger overskydende kWh ({excess_profit:.2f}){other_day}
+                            Battery kWh cost (basis): **{loop_battery_kwh_cost_raw:.2f} valuta/kWh**
+                            Charge/Discharge loss: **{loop_battery_loss_cost:.2f} valuta/kWh**
+                            Wear cost per kWh: **{abs(CONFIG['solar']['powerwall_wear_cost_per_kwh']):.2f} valuta/kWh**
+                            **Samlet battery kWh cost**: **{loop_battery_kwh_cost:.2f} valuta/kWh**
+                            Grid price: **{fixed_price_calc_text}{price:.2f} valuta/kWh**
+                            Excess kWh sold: **{excess_kwh_available_current_hour:.2f} kWh**
+                            Profit from selling: **{excess_profit:.2f} valuta**""",
+                            title=f"{TITLE} force_discharge_timestamps {timestamp}",
+                            persistent_notification_id=f"{__name__}_{func_name}_{sub_func_name}_{sub_sub_func_name}force_discharge_timestamps_{timestamp}"
+                        )
             
             if len(charging_plan[day]["force_discharge_timestamps"]) == 0:
+                battery_kwh_cost_raw, battery_loss_cost, battery_kwh_cost = _get_predicted_battery_cost(day)
+                
                 sorted_sell_prices_for_day = sorted(grid_sell_prices_for_day.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)
                 max_price_timestamp = sorted_sell_prices_for_day[0][0] if len(sorted_sell_prices_for_day) > 0 else None
                 max_price = sorted_sell_prices_for_day[0][1] if len(sorted_sell_prices_for_day) > 0 else 0.0
@@ -7754,7 +7794,8 @@ if INITIALIZATION_COMPLETE:
         try:
             TASKS[f'{func_prefix}local_energy_available'] = task.create(local_energy_available, period = 60, without_all_exclusion = True, solar_only = True)
             TASKS[f'{func_prefix}power_values'] = task.create(power_values, period = 60)
-            done, pending = task.wait({TASKS[f'{func_prefix}local_energy_available'], TASKS[f'{func_prefix}power_values']})
+            TASKS[f'{func_prefix}current_battery_level_expenses'] = task.create(current_battery_level_expenses)
+            done, pending = task.wait({TASKS[f'{func_prefix}local_energy_available'], TASKS[f'{func_prefix}power_values'], TASKS[f'{func_prefix}current_battery_level_expenses']})
             
             cron_local_energy_available = TASKS[f'{func_prefix}local_energy_available'].result()
             cron_power_values = TASKS[f'{func_prefix}power_values'].result()
