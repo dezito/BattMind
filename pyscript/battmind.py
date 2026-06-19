@@ -3631,21 +3631,23 @@ async def charging_history(timestamp=None, save_db = True):
         grid_consumption_kwh = home_consumption_kwh - (discharge_kwh + solar_production_kwh)
         
         charge_grid_share_pct = max(grid_consumption_kwh / charge_kwh if charge_kwh > 0.0 else 0.0, 0.0)
-        discharge_grid_share_pct = max(grid_consumption_kwh / discharge_kwh if discharge_kwh > 0.0 else 0.0, 0.0)
-        
         solar_charge_share_pct = max(solar_production_kwh / charge_kwh if charge_kwh > 0.0 else 0.0, 0.0)
-        solar_discharge_share_pct = max(solar_production_kwh / (discharge_kwh + home_consumption_kwh) if discharge_kwh > 0.0 else 0.0, 0.0)
         
+        discharge_grid_share_pct = max(grid_consumption_kwh / discharge_kwh if discharge_kwh > 0.0 else 0.0, 0.0)
+        solar_discharge_share_pct = max(solar_production_kwh / (discharge_kwh + home_consumption_kwh) if discharge_kwh > 0.0 else 0.0, 0.0)
         powerwall_discharge_share_pct = max(discharge_kwh / home_consumption_without_solar_kwh if home_consumption_without_solar_kwh > 0.0 else 0.0, 0.0)
         
-        share_pct_sum = charge_grid_share_pct + solar_charge_share_pct + discharge_grid_share_pct + solar_discharge_share_pct + powerwall_discharge_share_pct
-        normalization_factor = share_pct_sum / 1.0 if share_pct_sum > 0.0 else 1.0
+        charge_share_pct_sum = sum([charge_grid_share_pct, solar_charge_share_pct])
+        discharge_share_pct_sum = sum([discharge_grid_share_pct, solar_discharge_share_pct, powerwall_discharge_share_pct])
         
-        charge_grid_share_pct /= normalization_factor
-        solar_charge_share_pct /= normalization_factor
-        discharge_grid_share_pct /= normalization_factor
-        solar_discharge_share_pct /= normalization_factor
-        powerwall_discharge_share_pct /= normalization_factor
+        charge_normalization_factor = charge_share_pct_sum / 1.0 if charge_share_pct_sum > 0.0 else 1.0
+        charge_grid_share_pct /= charge_normalization_factor
+        solar_charge_share_pct /= charge_normalization_factor
+        
+        discharge_normalization_factor = discharge_share_pct_sum / 1.0 if discharge_share_pct_sum > 0.0 else 1.0
+        discharge_grid_share_pct /= discharge_normalization_factor
+        solar_discharge_share_pct /= discharge_normalization_factor
+        powerwall_discharge_share_pct /= discharge_normalization_factor
         
         _LOGGER.debug(f"{start} normalization_factor: {normalization_factor:.3f}")
         _LOGGER.debug(f"{start} home_consumption_kwh: {home_consumption_kwh:.3f} kWh, charge_kwh: {charge_kwh:.3f} kWh, discharge_kwh: {discharge_kwh:.3f} kWh, solar_production_kwh: {solar_production_kwh:.3f} kWh, grid_consumption_kwh: {grid_consumption_kwh:.3f} kWh")
@@ -3658,7 +3660,7 @@ async def charging_history(timestamp=None, save_db = True):
         buy_price = get_hour_prices().get(start, None)
         sell_price = get_hour_prices(sell_prices = True).get(start, None)
         
-        powerwall_kwh_price = BATTERY_LEVEL_EXPENSES.get("unit", None) if charge_kwh == 0.0 else None
+        powerwall_kwh_price = BATTERY_LEVEL_EXPENSES.get("unit_with_loss_and_wear", None)
         
         if buy_price is None or sell_price is None:
             raise Exception(f"Buy or sell price not found for timestamp {start}. buy_price: {buy_price}, sell_price: {sell_price}")
@@ -3667,11 +3669,10 @@ async def charging_history(timestamp=None, save_db = True):
             powerwall_kwh_price = get_powerwall_kwh_price()
         
         charge_grid_share = buy_price * charge_grid_share_pct
+        solar_charge_share = sell_price * solar_charge_share_pct
         
         discharge_grid_share = sell_price * discharge_grid_share_pct
-        solar_charge_share = sell_price * solar_charge_share_pct
         solar_discharge_share = sell_price * solar_discharge_share_pct
-        
         powerwall_discharge_share = powerwall_kwh_price * powerwall_discharge_share_pct
         
         charge_price = sum([charge_grid_share, solar_charge_share])
