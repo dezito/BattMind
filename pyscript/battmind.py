@@ -3097,6 +3097,12 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
 
     # --- Totals (month + total) ---
     total = {
+        "home_consumption_kwh": {"total": 0.0},
+        "discharge_kwh": {"total": 0.0},
+        "solar_production_kwh": {"total": 0.0},
+        "home_consumption_without_solar_kwh": {"total": 0.0},
+        "grid_consumption_kwh": {"total": 0.0},
+
         "charged_kwh": {"total": 0.0},
         "charged_cost": {"total": 0.0},
         "charged_local_kwh": {"total": 0.0},
@@ -3116,9 +3122,15 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
                 total[k][month] = 0.0
 
     def _read_session(session: dict):
+        energy_summary = session.get("energy_summary", {}) if isinstance(session.get("energy_summary", {}), dict) else {}
         prices = session.get("prices", {}) if isinstance(session.get("prices", {}), dict) else {}
         charged = session.get("charged", {}) if isinstance(session.get("charged", {}), dict) else {}
         discharged = session.get("discharged", {}) if isinstance(session.get("discharged", {}), dict) else {}
+        
+        e_home_consumption_kwh = _num(energy_summary.get("home_consumption_kwh", 0.0))
+        e_solar_production_kwh = _num(energy_summary.get("solar_production_kwh", 0.0))
+        e_home_consumption_without_solar_kwh = _num(energy_summary.get("home_consumption_without_solar_kwh", 0.0))
+        e_grid_consumption_kwh = _num(energy_summary.get("grid_consumption_kwh", 0.0))
 
         c_kwh = _num(charged.get("kWh", 0.0))
         c_pct = _num(charged.get("percentage", 0.0))
@@ -3134,7 +3146,7 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
         
         rules = session.get("rules", {}) if isinstance(session.get("rules", {}), dict) else {}
 
-        return prices, c_kwh, c_pct, c_cost, c_local, c_grid, d_kwh, d_pct, d_cost, savings_num, rules
+        return prices, c_kwh, c_pct, c_cost, c_local, c_grid, d_kwh, d_pct, d_cost, savings_num, rules, e_home_consumption_kwh, e_solar_production_kwh, e_home_consumption_without_solar_kwh, e_grid_consumption_kwh
 
     def _can_combine(base_when: datetime.datetime, next_when: datetime.datetime) -> bool:
         """
@@ -3157,7 +3169,7 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
             continue
 
         # read base
-        prices, c_kwh, c_pct, c_cost, c_local, c_grid, d_kwh, d_pct, d_cost, savings_num, rules = _read_session(session)
+        prices, c_kwh, c_pct, c_cost, c_local, c_grid, d_kwh, d_pct, d_cost, savings_num, rules, e_home_consumption_kwh, e_solar_production_kwh, e_home_consumption_without_solar_kwh, e_grid_consumption_kwh = _read_session(session)
 
         # Skip truly empty
         if c_kwh <= 0.0 and d_kwh <= 0.0 and c_pct <= 0.0 and d_pct <= 0.0 and savings_num == 0.0:
@@ -3187,7 +3199,7 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
                 if not _can_combine(when, next_when):
                     break
 
-                n_prices, nc_kwh, nc_pct, nc_cost, nc_local, nc_grid, nd_kwh, nd_pct, nd_cost, nsavings_num, n_rules = _read_session(next_session)
+                n_prices, nc_kwh, nc_pct, nc_cost, nc_local, nc_grid, nd_kwh, nd_pct, nd_cost, nsavings_num, n_rules, ne_home_consumption_kwh, ne_solar_production_kwh, ne_home_consumption_without_solar_kwh, ne_grid_consumption_kwh = _read_session(next_session)
                 
                 if n_prices.get("buy_price", None):
                     total_prices["buy_price"].append(n_prices.get("buy_price", None))
@@ -3218,6 +3230,11 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
                 d_cost += nd_cost
                 savings_num += nsavings_num
 
+                e_home_consumption_kwh += ne_home_consumption_kwh
+                e_solar_production_kwh += ne_solar_production_kwh
+                e_home_consumption_without_solar_kwh += ne_home_consumption_without_solar_kwh
+                e_grid_consumption_kwh += ne_grid_consumption_kwh
+
                 started = next_when  # oldest timestamp in the daily block
                 j += 1
                 
@@ -3231,6 +3248,12 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
 
         # --- Normalize and KEEP prices ---
         combined_db[started] = {
+            "energy_summary": {
+                "home_consumption_kwh": round(e_home_consumption_kwh, 3) if isinstance(e_home_consumption_kwh, (int, float)) else None,
+                "solar_production_kwh": round(e_solar_production_kwh, 3) if isinstance(e_solar_production_kwh, (int, float)) else None,
+                "home_consumption_without_solar_kwh": round(e_home_consumption_without_solar_kwh, 3) if isinstance(e_home_consumption_without_solar_kwh, (int, float)) else None,
+                "grid_consumption_kwh": round(e_grid_consumption_kwh, 3) if isinstance(e_grid_consumption_kwh, (int, float)) else None,
+            },
             "prices": {
                 "buy_price": _round_or_none(sum(total_prices["buy_price"]) / len(total_prices["buy_price"]) if total_prices["buy_price"] else used_prices.get("buy_price", None), 3),
                 "sell_price": _round_or_none(sum(total_prices["sell_price"]) / len(total_prices["sell_price"]) if total_prices["sell_price"] else used_prices.get("sell_price", None), 3),
@@ -3260,6 +3283,16 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
         # Totals (based on combined block)
         month = getMonthFirstDay(started)
         _ensure_month(month)
+        
+        total["home_consumption_kwh"][month] += e_home_consumption_kwh
+        total["solar_production_kwh"][month] += e_solar_production_kwh
+        total["home_consumption_without_solar_kwh"][month] += e_home_consumption_without_solar_kwh
+        total["grid_consumption_kwh"][month] += e_grid_consumption_kwh
+        
+        total["home_consumption_kwh"]["total"] += e_home_consumption_kwh
+        total["solar_production_kwh"]["total"] += e_solar_production_kwh
+        total["home_consumption_without_solar_kwh"]["total"] += e_home_consumption_without_solar_kwh
+        total["grid_consumption_kwh"]["total"] += e_grid_consumption_kwh
 
         total["charged_kwh"][month] += c_kwh
         total["charged_cost"][month] += c_cost
@@ -3687,7 +3720,10 @@ async def charging_history(timestamp=None, save_db = True):
         charge_cost = charge_price * charge_kwh if isinstance(charge_price, (int, float)) else None
         discharge_cost = discharge_price * discharge_kwh if isinstance(discharge_price, (int, float)) else None
         #savings = discharge_kwh * kwh_savings
-        savings = (discharge_kwh * buy_price) - (discharge_kwh * discharge_price) if isinstance(buy_price, (int, float)) and isinstance(discharge_price, (int, float)) else None
+        home_consumption_cost = home_consumption_without_solar_kwh * buy_price if isinstance(buy_price, (int, float)) and discharge_kwh > 0.0 else 0.0
+        sell_consumption_revenue = (discharge_kwh - home_consumption_without_solar_kwh) * sell_price if isinstance(sell_price, (int, float)) and discharge_kwh > 0.0 else 0.0
+        
+        savings = (home_consumption_cost + sell_consumption_revenue) - (discharge_kwh * discharge_price) if isinstance(home_consumption_cost, (int, float)) and isinstance(sell_consumption_revenue, (int, float)) and isinstance(discharge_price, (int, float)) else None
         kwh_savings = savings / discharge_kwh if isinstance(savings, (int, float)) and discharge_kwh != 0 else None
         
         """if selling_to_grid:
@@ -3738,6 +3774,12 @@ async def charging_history(timestamp=None, save_db = True):
         
         session_dict = {
             "rules": CURRENT_SESSION_RULES,
+            "energy_summary": {
+                "home_consumption_kwh": round(home_consumption_kwh, 3) if isinstance(home_consumption_kwh, (int, float)) else None,
+                "solar_production_kwh": round(solar_production_kwh, 3) if isinstance(solar_production_kwh, (int, float)) else None,
+                "home_consumption_without_solar_kwh": round(home_consumption_without_solar_kwh, 3) if isinstance(home_consumption_without_solar_kwh, (int, float)) else None,
+                "grid_consumption_kwh": round(grid_consumption_kwh, 3) if isinstance(grid_consumption_kwh, (int, float)) else None,
+            },
             "prices": {
                 "buy_price": round(buy_price, 3) if isinstance(buy_price, (int, float)) else None,
                 "sell_price": round(sell_price, 3) if isinstance(sell_price, (int, float)) else None,
