@@ -3079,9 +3079,9 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
     combined_block_counter = 0
 
     # Labels
-    charge_label = f"{emoji_parse({'charging': True})}{i18n.t('ui.common.price')}<br>({i18n.t('ui.common.valuta_kwh')})"
-    discharge_label = f"{emoji_parse({'discharging': True})}{i18n.t('ui.common.price')}<br>({i18n.t('ui.common.valuta_kwh')})"
-    savings_label = f"{emoji_parse({'profit': True})}<br>({i18n.t('ui.common.valuta_kwh')})"
+    charge_label = f"{emoji_parse({'charging': True})}{i18n.t('ui.common.price')}<br>{i18n.t('ui.common.valuta_kwh')}"
+    discharge_label = f"{emoji_parse({'discharging': True})}{i18n.t('ui.common.price')}<br>{i18n.t('ui.common.valuta_kwh')}"
+    savings_label = f"{emoji_parse({'profit': True})}<br>{i18n.t('ui.common.valuta_kwh')}"
 
     header = (
         f"| {i18n.t('ui.common.time')} | %<br>({emoji_parse({'solar': True})}) | kWh<br>({emoji_parse({'solar': True})}) | "
