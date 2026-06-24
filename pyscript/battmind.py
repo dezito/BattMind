@@ -1241,7 +1241,6 @@ def update_repo(trigger_type=None, trigger_id=None, **kwargs):
         if len(changelog) > 5000:
             changelog = changelog[:5000] + "\n* …"
 
-        # --- perform actual update ---
         run_console_command(["git", "-C", repo_path, "fetch", "--tags"])
         run_console_command(["git", "-C", repo_path, "checkout", "-f", target_tag])
         recreate_hardlinks()
@@ -1341,7 +1340,6 @@ def debug_info(trigger_type=None, trigger_id=None, **kwargs):
 
     debug_info_output = "\n".join(debug_info)
 
-    #_LOGGER.info(f"Debug Info: \n{get_debug_info_sections()}")
     my_persistent_notification(
         debug_info_output,
         title=f"{TITLE} debug info",
@@ -1856,7 +1854,6 @@ def load_language():
         
         _LOGGER.info(f"{BASENAME} i18n set language to: {i18n.get_lang()}")
         _LOGGER.info(f"{BASENAME} i18n get_available_langs: {i18n.get_available_langs()}")
-        #_LOGGER.info(f"{BASENAME} loaded i18n catalog: {pformat(i18n.get_catalog(), width=200, compact=True)}")
     except (asyncio.CancelledError, asyncio.TimeoutError, KeyError) as e:
         _LOGGER.warning(f"Task cancelled or timeout: {e} {type(e)}")
         return
@@ -2838,7 +2835,6 @@ def get_powerwall_kwh_price(kwh = None, timestamp=None): #TODO use predicted pri
     kwh_price_list = []
     
     try:
-        #for i in range(CONFIG['database']['power_values_db_data_to_save']):
         for hour in range(0, 24):
             if sum(powerwall_kwh) > kwh:
                 break
@@ -3011,7 +3007,6 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
     _LOGGER = globals()["_LOGGER"].getChild(func_name)
     global CHARGING_HISTORY_DB, CHARGING_HISTORY_ENDING_BYTE_SIZE, CHARGING_HISTORY_DB_TOTAL
 
-    # --- Combine-after (requested) ---
     combine_after = 10  # start combining only AFTER this many newest blocks
     
     history = []
@@ -3063,22 +3058,19 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
             history.append(s)
             current_history_bytes_size += len(s.encode("utf-8"))
 
-    # Newest first
     sorted_db = sorted(CHARGING_HISTORY_DB.items(), key=lambda item: item[0], reverse=True)
     sorted_db_len = len(sorted_db)
 
-    # --- UI folding ---
     length = 10
     sub_length = 50
     sub_details_count = 0
     details = False
     add_header = False
     history_too_big_announced = False
-    current_history_counter = 0  # markdown row counter
+    current_history_counter = 0
 
     combined_block_counter = 0
 
-    # Labels
     charge_label = f"{emoji_parse({'charging': True})}{i18n.t('ui.common.price')}<br>{i18n.t('ui.common.valuta_kwh')}"
     discharge_label = f"{emoji_parse({'discharging': True})}{i18n.t('ui.common.price')}<br>{i18n.t('ui.common.valuta_kwh')}"
     savings_label = f"{emoji_parse({'profit': True})}<br>{i18n.t('ui.common.valuta_kwh')}"
@@ -3095,7 +3087,6 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
     history_loop_append(header)
     history_loop_append(align)
 
-    # --- Totals (month + total) ---
     total = {
         "home_consumption_kwh": {"total": 0.0},
         "discharge_kwh": {"total": 0.0},
@@ -3159,7 +3150,6 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
         except Exception:
             return False
 
-    # --- Main loop (manual index so we can skip combined entries) ---
     idx = 0
     while idx < sorted_db_len:
         when, session = sorted_db[idx]
@@ -3168,18 +3158,15 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
             idx += 1
             continue
 
-        # read base
         prices, c_kwh, c_pct, c_cost, c_local, c_grid, d_kwh, d_pct, d_cost, savings_num, rules, e_home_consumption_kwh, e_solar_production_kwh, e_home_consumption_without_solar_kwh, e_grid_consumption_kwh = _read_session(session)
 
-        # Skip truly empty
         if c_kwh <= 0.0 and d_kwh <= 0.0 and c_pct <= 0.0 and d_pct <= 0.0 and savings_num == 0.0:
             idx += 1
             continue
 
-        # --- combine after X newest blocks ---
         started = when
-        end_when = when           # newest timestamp in block (for display)
-        used_prices = deepcopy(prices)      # keep newest prices in block
+        end_when = when
+        used_prices = deepcopy(prices)
         total_prices = {
             "buy_price": [],
             "sell_price": [],
@@ -3190,7 +3177,6 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
         }
 
         if combined_block_counter >= combine_after:
-            # daily combine: merge all same-day entries into one block
             j = idx + 1
             while j < sorted_db_len:
                 next_when, next_session = sorted_db[j]
@@ -3235,10 +3221,10 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
                 e_home_consumption_without_solar_kwh += ne_home_consumption_without_solar_kwh
                 e_grid_consumption_kwh += ne_grid_consumption_kwh
 
-                started = next_when  # oldest timestamp in the daily block
+                started = next_when
                 j += 1
                 
-                rules.update(n_rules)  # keep newest rules in block (they will be the same for the day, but just in case)
+                rules.update(n_rules)
 
             idx = j
         else:
@@ -3246,7 +3232,6 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
 
         combined_block_counter += 1
 
-        # --- Normalize and KEEP prices ---
         combined_db[started] = {
             "energy_summary": {
                 "home_consumption_kwh": round(e_home_consumption_kwh, 3) if isinstance(e_home_consumption_kwh, (int, float)) else None,
@@ -3280,7 +3265,6 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
             "rules": rules,
         }
 
-        # Totals (based on combined block)
         month = getMonthFirstDay(started)
         _ensure_month(month)
         
@@ -3326,9 +3310,6 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
         d_kwh = round(d_kwh, 1)
         d_pct = round(d_pct, 0)
         
-        
-
-        # --- folding / size ---
         if not history_too_big_announced:
             if current_history_bytes_size >= max_history_bytes_size:
                 history_too_big_announced = True
@@ -3355,13 +3336,11 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
                 sub_details_count += 1
                 add_header = True
 
-        # --- UI rows (ONE ROW PER BLOCK/DAY) ---
         if current_history_bytes_size < max_history_bytes_size:
             if add_header:
                 add_header = False
                 history_loop_append([header, align])
 
-            # If we're combining (daily), show date only; else show datetime
             if combined_block_counter > combine_after:
                 time_str = f"**{started.strftime('%d/%m')}**"
             else:
@@ -3371,7 +3350,6 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
             rules_without_solar.pop("solar", None)
             emoji_str = f"<br>{emoji_text_format(emoji_parse(rules_without_solar), group_size=3)}" if rules else ""
 
-            # % column: charge on first line (green), discharge on second line (red) if both exist
             pct_lines = []
             if c_kwh > 0.0 or c_pct > 0.0:
                 pct_lines = [_charge_color(f"{int(c_pct)}")]
@@ -3383,7 +3361,6 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
                 pct_lines.append(_discharge_color(f"-{int(d_pct)}"))
             pct_str = "<br>".join(pct_lines) if pct_lines else ""
 
-            # kWh column: same pattern; include solar local split on charge line if you want
             kwh_lines = []
             if c_kwh > 0.0:
                 c_line = _charge_color(f"{_fmt(c_kwh,1,'0.0')}")
@@ -3396,7 +3373,6 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
                 kwh_lines.append(_discharge_color(f"-{_fmt(d_kwh,1,'0.0')}"))
             kwh_str = "<br>".join(kwh_lines) if kwh_lines else ""
 
-            # price columns
             buy_price = used_prices.get("buy_price", None)
             charge_price_unit = (c_cost / c_kwh) if c_kwh > 0 else None
             charge_price_lines = []
@@ -3423,14 +3399,12 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
                 history_loop_append(f"| {time_str}{emoji_str} | {pct_str} | {kwh_str} | {_charge_color(charge_price_str)} | {_discharge_color(discharge_price_str)} | {sav_str} |")
             current_history_counter += 1
 
-        # close details at end
         if current_history_counter > length and (sorted_db_len - idx) == 0:
             history_loop_append(["</details>", "\n"] * (sub_details_count + 1))
 
     if details:
         history.extend(["</details>", "\n"])
 
-    # --- Totals summary ---
     ck_tot = total["charged_kwh"]["total"]
     dk_tot = total["discharged_kwh"]["total"]
     cc_tot = total["charged_cost"]["total"]
@@ -3532,7 +3506,6 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
     history.append("\n</details>\n")
     history.append("</center>")
 
-    # --- Ending-byte-size buffer ---
     total_history_bytes_size = len("\n".join(history).encode("utf-8"))
     CHARGING_HISTORY_ENDING_BYTE_SIZE = total_history_bytes_size - current_history_bytes_size + 1000
 
@@ -3603,7 +3576,7 @@ def recalc_charging_history_today():
     failures = 0
     for t in done:
         try:
-            result = t.result()  # <-- her kommer fejl frem
+            result = t.result()
             _LOGGER.info(f"Charging history task {t.get_name()} completed successfully with result: {result}")
         except Exception as e:
             failures += 1
@@ -3682,14 +3655,6 @@ async def charging_history(timestamp=None, save_db = True):
         solar_discharge_share_pct /= discharge_normalization_factor
         powerwall_discharge_share_pct /= discharge_normalization_factor
         
-        _LOGGER.debug(f"{start} normalization_factor: {normalization_factor:.3f}")
-        _LOGGER.debug(f"{start} home_consumption_kwh: {home_consumption_kwh:.3f} kWh, charge_kwh: {charge_kwh:.3f} kWh, discharge_kwh: {discharge_kwh:.3f} kWh, solar_production_kwh: {solar_production_kwh:.3f} kWh, grid_consumption_kwh: {grid_consumption_kwh:.3f} kWh")
-        _LOGGER.debug(f"{start} charge_grid_share_pct: {charge_grid_share_pct * 100:.1f}%, discharge_grid_share_pct: {discharge_grid_share_pct * 100:.1f}%, powerwall_discharge_share_pct: {powerwall_discharge_share_pct * 100:.1f}%")
-        _LOGGER.debug(f"{start} solar_charge_share_pct: {solar_charge_share_pct * 100:.1f}%, solar_discharge_share_pct: {solar_discharge_share_pct * 100:.1f}%")
-        
-        """selling_to_grid = True if grid_consumption_kwh <= -100.0 else False
-        selling_to_grid = True if solar_production_kwh >= home_consumption_kwh else selling_to_grid"""
-        
         buy_price = get_hour_prices().get(start, None)
         sell_price = get_hour_prices(sell_prices = True).get(start, None)
         
@@ -3711,41 +3676,14 @@ async def charging_history(timestamp=None, save_db = True):
         charge_price = sum([charge_grid_share, solar_charge_share])
         discharge_price = sum([discharge_grid_share, solar_discharge_share, powerwall_discharge_share])
         
-        _LOGGER.debug(f"{start} buy_price: {buy_price:.3f} kr/kWh, sell_price: {sell_price:.3f} kr/kWh, powerwall_kwh_price: {powerwall_kwh_price:.3f} kr/kWh")
-        _LOGGER.debug(f"{start} charge_grid_share: {charge_grid_share:.3f} kr/kWh, solar_charge_share: {solar_charge_share:.3f} kr/kWh, discharge_grid_share: {discharge_grid_share:.3f} kr/kWh, solar_discharge_share: {solar_discharge_share:.3f} kr/kWh, powerwall_discharge_share: {powerwall_discharge_share:.3f} kr/kWh")
-        _LOGGER.debug(f"{start} charge_price: {charge_price:.3f} kr/kWh, discharge_price: {discharge_price:.3f} kr/kWh")
-        
-        #kwh_savings = round(buy_price - powerwall_kwh_price, 3) if isinstance(buy_price, (int, float)) and isinstance(powerwall_kwh_price, (int, float)) else None
-        
         charge_cost = charge_price * charge_kwh if isinstance(charge_price, (int, float)) else None
         discharge_cost = discharge_price * discharge_kwh if isinstance(discharge_price, (int, float)) else None
-        #savings = discharge_kwh * kwh_savings
         home_consumption_cost = home_consumption_without_solar_kwh * buy_price if isinstance(buy_price, (int, float)) and discharge_kwh > 0.0 else 0.0
         sell_consumption_revenue = (discharge_kwh - home_consumption_without_solar_kwh) * sell_price if isinstance(sell_price, (int, float)) and discharge_kwh > 0.0 else 0.0
         
         savings = (home_consumption_cost + sell_consumption_revenue) - (discharge_kwh * discharge_price) if isinstance(home_consumption_cost, (int, float)) and isinstance(sell_consumption_revenue, (int, float)) and isinstance(discharge_price, (int, float)) else None
         kwh_savings = savings / discharge_kwh if isinstance(savings, (int, float)) and discharge_kwh != 0 else None
         
-        """if selling_to_grid:
-            if isinstance(sell_price, (int, float)):
-                _LOGGER.info(f"{start} Selling to grid, using sell price for charge cost calculation: {sell_price} kr/kWh grid_consumption_kwh: {grid_consumption_kwh} kWh")
-                charge_price = sell_price
-                charge_cost = charge_kwh * sell_price
-                
-                _LOGGER.info(f"{start} Selling to grid, using sell price for discharge cost calculation: {sell_price} kr/kWh grid_consumption_kwh: {grid_consumption_kwh} kWh")
-                discharge_price = sell_price
-                discharge_cost = discharge_kwh * sell_price
-                
-        else:
-            if isinstance(buy_price, (int, float)):
-                #_LOGGER.info(f"{start} Not selling to grid, using buy price for charge cost calculation: {buy_price} kr/kWh grid_consumption_kwh: {grid_consumption_kwh} kWh")
-                charge_price = buy_price
-                charge_cost = charge_kwh * buy_price
-                
-            #_LOGGER.info(f"{start} Not selling to grid, using powerwall kWh price for discharge cost calculation: {powerwall_kwh_price} kr/kWh grid_consumption_kwh: {grid_consumption_kwh} kWh")
-            discharge_price = powerwall_kwh_price
-            discharge_cost = discharge_kwh * powerwall_kwh_price"""
-            
         kwh_from_local_energy = 0.0
         
         if charge_kwh > 0.0:
@@ -3860,7 +3798,7 @@ def current_battery_level_expenses():
     }
     
     try:
-        current_battery_level = get_battery_level()# - max(get_min_daily_battery_level(), get_min_trip_battery_level())
+        current_battery_level = get_battery_level()
         
         if CHARGING_HISTORY_DB:
             for key in dict(sorted(CHARGING_HISTORY_DB.items(), key=lambda item: item[0], reverse=True)).keys():
@@ -4104,7 +4042,7 @@ def get_hour_prices(update_prices = False, sell_prices = False):
                         if timestamp in hour_prices:
                             continue
                         
-                        avg_price = average(KWH_AVG_PRICES_DB['history'][h][d]) # Refund is already included in KWH_AVG_PRICES_DB
+                        avg_price = average(KWH_AVG_PRICES_DB['history'][h][d])
                         price = round(avg_price + (daysBetween(current_hour, timestamp) / price_adder_day_between_divider), 2)
                         
                         missing_hours[timestamp] = price
@@ -4146,28 +4084,23 @@ def get_hour_prices(update_prices = False, sell_prices = False):
 def find_nth_local_min(
     price_dict: dict[datetime.datetime, float],
     n: int = 1,
-    rise_threshold: float = 0.0,  # min. stigning efter bunden
+    rise_threshold: float = 0.0,
     include_edge_last: bool = True,
 ):
-    # Sortér efter tid, så rækkefølgen er kronologisk
     items = sorted(price_dict.items())
     times = [t for t, _ in items]
     vals = [v for _, v in items]
     minima = []
 
-    # Find lokale minima (inkl. sidste punkt i plateau før stigning)
     for i in range(0, len(vals) - 1):
         prev_v, cur_v, next_v = vals[i - 1], vals[i], vals[i + 1]
-        #_LOGGER.error(f"{times[i]} {cur_v} <= {prev_v} ({cur_v <= prev_v}) and {cur_v} < {next_v} ({cur_v < next_v})")
         if cur_v <= prev_v and (cur_v + 0) < (next_v + 0):
             minima.append(times[i])
 
-    # Håndtér fald i slutningen som minimum
     if include_edge_last and len(vals) >= 2:
         if vals[-1] < vals[-2]:
             minima.append(times[-1])
 
-    # Returnér n-te lokale minimum hvis det findes
     if n - 1 < len(minima):
         return minima[n - 1]
     return None
@@ -4338,7 +4271,6 @@ def cheap_grid_charge_hours():
         
         for hour in range(from_hour, 24):
             if reset_hour:
-                #_LOGGER.info(f"Resetting battery level flow for day:{day} hour:{hour} battery_level before:{sum(charging_plan[day]['battery_level_flow'].get(hour, [0.0]))}")
                 charging_plan[day]['battery_level_flow'][hour] = []
                 
             if hour == from_hour:
@@ -4458,30 +4390,26 @@ def cheap_grid_charge_hours():
                                 diff = remaining_battery_level - nextday_lowest_battery_level
                                 if diff > tolerance:
                                     no_remaining_battery_level_found = True
-                                    _LOGGER.warning(f"Battery level rose above lowest battery level with more than tolerance of {tolerance}% in the next 3 hours, diff:{diff}%, remaining_timestamp:{remaining_timestamp}, remaining_battery_level:{remaining_battery_level}%, lowest_timestamp:{nextday_lowest_timestamp}, lowest_battery_level:{nextday_lowest_battery_level}%")
                                     break
                                 
                                 if remaining_battery_level < nextday_lowest_battery_level:
                                     nextday_lowest_timestamp = remaining_timestamp
                                     nextday_lowest_battery_level = remaining_battery_level
-                                    _LOGGER.info(f"New lowest battery level found: {nextday_lowest_battery_level}% at {nextday_lowest_timestamp}")
                         
                         if no_remaining_battery_level_found:
-                            _LOGGER.error(f"Battery level rose above lowest battery level or is at minimum battery level, and no remaining battery level found with more than tolerance of 3% in the next 3 hours, lowest_timestamp:{nextday_lowest_timestamp}, lowest_battery_level:{nextday_lowest_battery_level}%")
                             break
                         
                     
                     if battery_level < nextday_lowest_battery_level:
                         nextday_lowest_timestamp = timestamp
                         nextday_lowest_battery_level = battery_level
-                        _LOGGER.info(f"New lowest battery level found: {nextday_lowest_battery_level}% at {nextday_lowest_timestamp}")
                 
                 hours = hoursBetween(current_hour, nextday_lowest_timestamp) + 1
             
             battery_level_dict = {
                 getTime(): f"{int(round(current_battery_level, 0))} %"
             }
-            _LOGGER.error(f"hours:{hours}")
+            
             for hour in range(hours):
                 timestamp = current_hour.replace(minute=59, second=59, microsecond=0) + datetime.timedelta(hours=hour)
                 what_day = daysBetween(current_hour, timestamp)
@@ -4497,21 +4425,16 @@ def cheap_grid_charge_hours():
                 if battery_level < lowest_battery_level:
                     lowest_battery_level = battery_level
                     lowest_timestamp = timestamp
-                    _LOGGER.info(f"New lowest battery level found: {lowest_battery_level}% at {lowest_timestamp}")
                 
-            _LOGGER.info(f"before battery_level_dict: {battery_level_dict}")
             battery_level_dict_items = list(battery_level_dict.items())
             if not use_midnight_battery_level_enabled():
                 while len(battery_level_dict_items) > 1 and battery_level_dict_items[-1][1] == battery_level_dict_items[-2][1]:
                     battery_level_dict_items.pop()
 
             battery_level_dict = dict(battery_level_dict_items)
-            _LOGGER.warning(f"after battery_level_dict: {battery_level_dict}")
             
             battery_level_needed_sum = lowest_battery_level
-            battery_level_needed_sum = min(battery_level_needed_sum, CONFIG['solar']['powerwall_battery_level_max'])
-            battery_level_needed_sum = max(battery_level_needed_sum, CONFIG['solar']['powerwall_battery_level_min'])
-            _LOGGER.info(f"({CONFIG['solar']['powerwall_battery_level_max']} - {battery_level_needed_sum}) + {CONFIG['solar']['powerwall_battery_level_min']} = ({CONFIG['solar']['powerwall_battery_level_max'] - battery_level_needed_sum}) + {CONFIG['solar']['powerwall_battery_level_min']} = {(CONFIG['solar']['powerwall_battery_level_max'] - battery_level_needed_sum) + CONFIG['solar']['powerwall_battery_level_min']}")
+            battery_level_needed_sum = max(min(battery_level_needed_sum, CONFIG['solar']['powerwall_battery_level_max']), CONFIG['solar']['powerwall_battery_level_min'])
             battery_level_needed_sum = (CONFIG['solar']['powerwall_battery_level_max'] - battery_level_needed_sum) + CONFIG['solar']['powerwall_battery_level_min']
             battery_level_needed_sum = int(round(battery_level_needed_sum, 0))
             
@@ -4528,7 +4451,6 @@ def cheap_grid_charge_hours():
         nonlocal func_name
         _LOGGER = globals()['_LOGGER'].getChild(f"{func_name}.{name}")
         
-        # Byg tabellen
         header_builder = []
         for i in range(amount_of_days):
             header_builder.append(f"{i:^10}")
@@ -4560,7 +4482,7 @@ def cheap_grid_charge_hours():
         
         global TASKS
         nonlocal battery_expenses
-        
+                
         def add_charging_session_to_day(timestamp, what_day, battery_level_id, reason = "unknown"):
             nonlocal func_name, sub_func_name
             sub_sub_func_name = "add_charging_session_to_day"
@@ -4716,9 +4638,6 @@ def cheap_grid_charge_hours():
                         if cheapest_price_diff is not None and cheapest_price_diff > cheapest_price_rise_threshold:
                             continue
                         
-                        """if not in_between(timestamp, max(current_hour, charging_plan[day]["start_of_day"]), timestamp + datetime.timedelta(hours=1)) or timestamp < current_hour:
-                            continue"""
-                        
                         kwh_with_profit = []
                         for hour in range(timestamp.hour, 24):
                             loop_price = hour_prices.get(timestamp.replace(hour=hour), None)
@@ -4772,15 +4691,6 @@ def cheap_grid_charge_hours():
                                 add_charging_to_days(timestamp, highest_battery_level_timestamp, battery_level_added)
                         else:
                             finished = True
-                
-                """for remove_timestamp in remove_list:
-                    index_of_timestamp = None
-                    try:
-                        index_of_timestamp = sorted_by_cheapest_price.index((remove_timestamp, hour_prices[remove_timestamp]))
-                    except:
-                        index_of_timestamp = None
-                    if index_of_timestamp is not None:
-                        sorted_by_cheapest_price.pop(sorted_by_cheapest_price.index((remove_timestamp, hour_prices[remove_timestamp])))"""
             except Exception as e:
                 _LOGGER.error(f"Error in cheapest_hour_fill_planner day:{day}: {e} {type(e)}")
                 save_error_to_file(f"Error in cheapest_hour_fill_planner day:{day}: {e} {type(e)}")
@@ -4841,13 +4751,13 @@ def cheap_grid_charge_hours():
                         highest_battery_level_timestamp = timestamp
                         what_day = daysBetween(current_hour, timestamp)
                         highest_battery_level = max(sum(charging_plan[what_day]['battery_level_flow'].get(timestamp.hour, [0.0])), highest_battery_level)
-                        #_LOGGER.info(f"sorted_timestamp:{sorted_timestamp}=>timestamp:{timestamp} highest_battery_level:{highest_battery_level:.1f}% hoursBetween({hoursBetween(timestamp, sorted_timestamp)})")
+                        
                         for i in range(1, hoursBetween(timestamp, sorted_timestamp) + 1):
                             loop_timestamp = (sorted_timestamp - datetime.timedelta(hours=i))
                             loop_day = daysBetween(current_hour, loop_timestamp)
                             loop_battery_level = sum(charging_plan.get(loop_day, {}).get('battery_level_flow', {}).get(loop_timestamp.hour, [0.0]))
                             
-                            #_LOGGER.warning(f"sorted_timestamp:{sorted_timestamp}=>timestamp:{timestamp}=>loop_timestamp:{loop_timestamp} loop_battery_level:{loop_battery_level:.1f}% highest_battery_level:{highest_battery_level:.1f}%")
+                            
                             if loop_battery_level > highest_battery_level:
                                 highest_battery_level_timestamp = loop_timestamp
                                 highest_battery_level = max(loop_battery_level, highest_battery_level)
@@ -4860,7 +4770,6 @@ def cheap_grid_charge_hours():
                             continue
                         
                         kwh_needed = min(sorted_kwh_needed, available_kwh)
-                        #kwh_needed -= charging_plan[day]['solar_kwh_prediction_total']
                         
                         if kwh_needed <= 0.0:
                             remove_list.append(timestamp)
@@ -4963,11 +4872,7 @@ def cheap_grid_charge_hours():
                         to_timestamp = charging_plan[day]["end_of_day"]
                         if not in_between(timestamp, from_timestamp, to_timestamp) or timestamp < current_hour:
                             continue
-                        
-                        """if not in_between(timestamp, max(current_hour, charging_plan[day]["start_of_day"]), timestamp + datetime.timedelta(hours=1)) or timestamp < current_hour:
-                            _LOGGER.warning(f"Timestamp {timestamp} is not between {max(current_hour, charging_plan[day]['start_of_day'])} and {timestamp + datetime.timedelta(hours=1)} or is before current_hour {current_hour}, skipping")
-                            continue"""
-                        
+                                                
                         kwh_profit = needed_price - (price + calc_battery_loss_cost(price) + abs(CONFIG['solar']['powerwall_wear_cost_per_kwh']))
                         min_profit_per_kwh = get_min_profit_per_kwh() if only_discharge_on_profit_enabled() else 0.0
                         
@@ -5284,7 +5189,6 @@ def cheap_grid_charge_hours():
                             lowest_timestamp = timestamp
                         
                         if lowest_battery_level == CONFIG['solar']['powerwall_battery_level_min']:
-                            _LOGGER.warning(f"Lowest battery level reached minimum battery level at timestamp:{lowest_timestamp}, breaking")
                             break
             lowest_battery_level = round(lowest_battery_level, 0)
             lowest_battery_level = lowest_battery_level - CONFIG['solar']['powerwall_battery_level_min']
@@ -5339,7 +5243,6 @@ def cheap_grid_charge_hours():
                         continue
                     
                     if exclude_hours and timestamp.hour in exclude_hours:
-                        _LOGGER.warning(f"Excluding timestamp:{timestamp} from selling excess kWh due to exclude_hours setting")
                         continue
                     
                     what_day = daysBetween(current_hour, timestamp)
@@ -5355,7 +5258,6 @@ def cheap_grid_charge_hours():
                     min_profit_per_kwh = get_min_profit_per_kwh() if only_discharge_on_profit_enabled() else 0.0
                     
                     if kwh_profit < min_profit_per_kwh:
-                        _LOGGER.debug(f"Day:{day} Skipping selling excess kWh at timestamp:{timestamp} due to low profit per kWh:{kwh_profit:.2f} which is less than min_profit_per_kwh:{min_profit_per_kwh:.2f} (price:{price:.2f} - battery_kwh_cost:{battery_kwh_cost:.2f})")
                         continue
                     
                     excess_kwh_available -= excess_kwh_available_current_hour
@@ -5483,7 +5385,7 @@ def cheap_grid_charge_hours():
                 if not sell_rules[rule_priority]['enabled_func']:
                     continue
                 
-                battery_levels_report(name=f"{sub_func_name}.{sell_rules[rule_priority]['name']}", title=f"Before {sell_rules[rule_priority]['name']} for day {day}", logtype="info")
+                #battery_levels_report(name=f"{sub_func_name}.{sell_rules[rule_priority]['name']}", title=f"Before {sell_rules[rule_priority]['name']} for day {day}", logtype="info")
                 
                 TASKS[f"{func_prefix}{sell_rules[rule_priority]['name']}_{day}"] = task.create(sell_rules[rule_priority]['func'], day)
                 done, pending = task.wait({TASKS[f"{func_prefix}{sell_rules[rule_priority]['name']}_{day}"]})
@@ -5491,7 +5393,7 @@ def cheap_grid_charge_hours():
                 TASKS[f"{func_prefix}battery_level_flow_prediction_recalc_{day}"] = task.create(battery_level_flow_prediction_recalc)
                 done, pending = task.wait({TASKS[f"{func_prefix}battery_level_flow_prediction_recalc_{day}"]})
                 
-                battery_levels_report(name=f"{sub_func_name}.{sell_rules[rule_priority]['name']}", title=f"After {sell_rules[rule_priority]['name']} for day {day}", logtype="warning")
+                #battery_levels_report(name=f"{sub_func_name}.{sell_rules[rule_priority]['name']}", title=f"After {sell_rules[rule_priority]['name']} for day {day}", logtype="warning")
                         
         TASKS[f"{func_prefix}battery_level_flow_prediction_recalc_final_recalc"] = task.create(battery_level_flow_prediction_recalc, final_recalc = True)
         done, pending = task.wait({TASKS[f"{func_prefix}battery_level_flow_prediction_recalc_final_recalc"]})
@@ -5684,51 +5586,6 @@ def cheap_grid_charge_hours():
             charging_plan[day]['rules'].append("no_rule")
             
         battery_level_flow_prediction(day, from_hour)
-            
-    """# Byg tabellen
-    header_builder = []
-    for i in range(amount_of_days):
-        header_builder.append(f"{i:^10}")
-    hdr = f"{'Hour':>10} | " + " | ".join(header_builder)
-    sep   = "-" * len(hdr)
-    lines = ["Solar only", hdr, sep]
-    
-    for hour in range(24):
-        string_builder = []
-        for i in range(amount_of_days):
-            string_builder.append(f"{bt_cell(i, hour):^10}")
-        line = f"{hour:>10} | " + " | ".join(string_builder)
-        lines.append(line)
-
-    for line in lines:
-        _LOGGER.info(line)
-            
-    for day in range(amount_of_days):
-        def fmt_cell(seq, i):
-            try:
-                hour = seq[i][0]
-                kwh = seq[i][1]['kwh']
-                cost = seq[i][1]['cost']
-                return f"{hour:02d}: {kwh:>6.1f}kWh {cost:>6.2f}{i18n.t('ui.common.valuta')}"
-            except:
-                return "--: --kWh / --kr"
-            
-        # Byg tabellen
-        title = f"📅 {day} {charging_plan[day]['day_text']} {date_to_string(charging_plan[day]['start_of_day'], format='%d/%m')}"
-        hdr   = f"{'Idx':>3} | {'EMA (hour / kwh / cost)':^30} | {'Trend (hour / kwh / cost)':^30} | {'Avg (hour / kwh / cost)':^30}"
-        sep   = "-" * len(hdr)
-        lines = [title, hdr, sep]
-
-        ema_sorted = sorted(charging_plan[day]['hour_cost_prediction']['ema'].items(), key=lambda kv: (kv[1]['cost'], kv[0]), reverse=True)
-        trend_sorted = sorted(charging_plan[day]['hour_cost_prediction']['trend'].items(), key=lambda kv: (kv[1]['cost'], kv[0]), reverse=True)
-        avg_sorted = sorted(charging_plan[day]['hour_cost_prediction']['avg'].items(), key=lambda kv: (kv[1]['cost'], kv[0]), reverse=True)
-                
-        for i in range(len(ema_sorted)):
-            line = f"{i+1:>3} | {fmt_cell(ema_sorted, i):<30} | {fmt_cell(trend_sorted, i):<30} | {fmt_cell(avg_sorted, i):<30}"
-            lines.append(line)
-
-        for line in lines:
-            _LOGGER.warning(line) if "📅" in line else _LOGGER.info(line)"""
 
     for timestamp, price in dict(deepcopy(sorted_by_cheapest_price)).items():
         if daysBetween(current_hour, timestamp) >= amount_of_days:
@@ -5742,8 +5599,6 @@ def cheap_grid_charge_hours():
         done, pending = task.wait({TASKS[f"{func_prefix}set_min_max_battery_levels"]})
         
         totalCost, totalkWh = TASKS[f"{func_prefix}future_charging"].result()
-        """except asyncio.exceptions.InvalidStateError as e:
-            _LOGGER.info(f"InvalidStateError in future_charging: TASKS[f'{func_prefix}future_charging']={TASKS[f'{func_prefix}future_charging']} {e} {type(e)}")"""
     except (asyncio.CancelledError, asyncio.TimeoutError, KeyError) as e:
         _LOGGER.warning(f"Cancelled/Timeout/KeyError in future_charging: TASKS[f'{func_prefix}future_charging']={TASKS[f'{func_prefix}future_charging']} {e} {type(e)}")
         return
@@ -5752,24 +5607,6 @@ def cheap_grid_charge_hours():
         raise Exception(f"Error in future_charging: {e} {type(e)}")
     finally:
         task_cancel(func_prefix, task_remove=True, startswith=True)
-        
-    """# Byg tabellen
-    header_builder = []
-    for i in range(amount_of_days):
-        header_builder.append(f"{i:^10}")
-    hdr = f"{'Hour':>10} | " + " | ".join(header_builder)
-    sep   = "-" * len(hdr)
-    lines = ["Solar + scheduled", hdr, sep]
-    
-    for hour in range(24):
-        string_builder = []
-        for i in range(amount_of_days):
-            string_builder.append(f"{bt_cell(i, hour):^10}")
-        line = f"{hour:>10} | " + " | ".join(string_builder)
-        lines.append(line)
-
-    for line in lines:
-        _LOGGER.info(line)"""
     
     chargeHours['total_cost'] = totalCost
     chargeHours['total_kwh'] = totalkWh
@@ -6080,9 +5917,6 @@ def cheap_grid_charge_hours():
             overview.append("</center>\n")
     except Exception as e:
         _LOGGER.error(f"Failed to create solar over production overview: {e} {type(e)}")
-        #_LOGGER.error(f"solar_over_production: {solar_over_production}")
-        #_LOGGER.error(f"charging_plan:\n{pformat(charging_plan, width=200, compact=True)}")
-        #_LOGGER.error(f"chargeHours:\n{pformat(chargeHours, width=200, compact=True)}")
         
     try:
         overview.append("<center>\n")
@@ -7322,7 +7156,7 @@ def charge_if_needed():
             
         if powerwall_watt_flow != 0:
             flow = powerwall_watt_flow
-            # Normaliser så:
+            # Normalise:
             # + = charging
             # - = discharging
             if not CONFIG['home']['invert_powerwall_watt_flow_entity_id']:
@@ -7644,18 +7478,15 @@ if INITIALIZATION_COMPLETE:
 
                 releases = json.loads(api_response)
 
-                # extract tag names (newest first)
                 tags = [r.get("tag_name") for r in releases if r.get("tag_name")]
                 if not tags:
                     raise ValueError("No tags found in release data")
 
-                tags.insert(0, "latest")  # add 'latest' option at the top
+                tags.insert(0, "latest")
                 _LOGGER.info(f"Found {len(tags)} releases: {tags}")
                 
-                # update input_select options
                 input_select.set_options(entity_id=entity_id, options=tags)
 
-                # optionally set the first (latest) as current value
                 input_select.select_option(entity_id=entity_id, option=tags[0])
                 
                 if trigger_type == "service":
