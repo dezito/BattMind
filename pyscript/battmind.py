@@ -2408,7 +2408,9 @@ if INITIALIZATION_COMPLETE:
     is_powerwall_configured()
     
     MAX_KWH_CHARGING = CONFIG['solar']['powerwall_charging_power_limit'] / 1000
+    MAX_KWH_DISCHARGING = CONFIG['solar']['powerwall_discharging_power'] / 1000
     MAX_WATT_CHARGING = CONFIG['solar']['powerwall_charging_power_limit']
+    MAX_WATT_DISCHARGING = CONFIG['solar']['powerwall_discharging_power']
 
 def set_entity_friendlynames():
     func_name = "set_entity_friendlynames"
@@ -4307,7 +4309,7 @@ def cheap_grid_charge_hours():
                 solar_percentage = kwh_to_percentage(charging_plan[day]['solar_kwh_prediction'][hour], include_charging_loss = True)
                 percentage_added += solar_percentage
                 
-                max_charging_percentage = kwh_to_percentage(CONFIG['solar']['powerwall_charging_power_limit'] / 1000.0, include_charging_loss = True)
+                max_charging_percentage = kwh_to_percentage(MAX_KWH_CHARGING, include_charging_loss = True)
                 percentage_added = min(percentage_added, max_charging_percentage)
             except Exception as e:
                 pass
@@ -4319,7 +4321,7 @@ def cheap_grid_charge_hours():
             percentage_used = charging_plan[day]['hour_cost_prediction'][FORECAST_TYPE][hour]['percentage'] * -1
             
             if timestamp in charging_plan[day]["force_discharge_timestamps"]:
-                discharge_limit_percentage = kwh_to_percentage(CONFIG['solar']['powerwall_discharging_power'] / 1000.0, include_charging_loss = True)
+                discharge_limit_percentage = kwh_to_percentage(MAX_KWH_DISCHARGING, include_charging_loss = True)
                 percentage_sold = kwh_to_percentage(charging_plan[day]["force_discharge_timestamps"][timestamp]['kwh'], include_charging_loss = True) * -1
                 
                 if abs(percentage_sold) + percentage_added > discharge_limit_percentage:
@@ -4617,7 +4619,6 @@ def cheap_grid_charge_hours():
                         percentage_needed_today.append(charging_plan[day]['hour_cost_prediction'][FORECAST_TYPE][hour]['percentage'])
                 
                 kwh_needed = kwh_needed_for_charging(min(sum(percentage_needed_today), CONFIG['solar']['powerwall_battery_level_max']), highest_battery_level)
-                #kwh_needed -= charging_plan[day]['solar_kwh_prediction_total']
                 
                 if kwh_needed <= 0.0:
                     return
@@ -5211,7 +5212,7 @@ def cheap_grid_charge_hours():
             if using_next_day:
                 _LOGGER.debug(f"Using lowest battery level of next day before battery charging for calculating excess_kwh_available for day:{day} which is at {lowest_timestamp} with battery level:{lowest_battery_level:.1f}% resulting in excess_kwh_available:{excess_kwh_available:.2f}kWh")
             
-            discharge_hours_needed = int(round_up(excess_kwh_available / (abs(CONFIG['solar']['powerwall_discharging_power']) / 1000.0)))
+            discharge_hours_needed = int(round_up(excess_kwh_available / (abs(MAX_KWH_DISCHARGING))))
             
             using_grid_sell_price = True
             grid_sell_prices_for_day = {timestamp: price for timestamp, price in grid_sell_prices.items() if in_between(timestamp, charging_plan[day]['start_of_day'], lowest_timestamp + datetime.timedelta(hours=1))}
@@ -5249,7 +5250,7 @@ def cheap_grid_charge_hours():
                     battery_level = charging_plan[what_day]['battery_level_flow'].get(timestamp.hour, None)
                     loop_battery_kwh_cost_raw, loop_battery_loss_cost, loop_battery_kwh_cost = _get_predicted_battery_cost(day, predicted_battery_level = sum(battery_level) if battery_level is not None else None)
                     
-                    excess_kwh_available_current_hour = min(excess_kwh_available, (abs(CONFIG['solar']['powerwall_discharging_power']) / 1000.0))
+                    excess_kwh_available_current_hour = min(excess_kwh_available, abs(MAX_KWH_DISCHARGING))
                     
                     excess_profit = excess_kwh_available_current_hour * price
                     excess_profit -= excess_kwh_available_current_hour * loop_battery_kwh_cost
