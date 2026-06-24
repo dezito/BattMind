@@ -2628,7 +2628,7 @@ def get_min_profit_per_kwh():
     func_name = "get_min_profit_per_kwh"
     _LOGGER = globals()['_LOGGER'].getChild(func_name)
     try:
-        return float(get_state(f"input_number.{__name__}_min_profit_per_kwh", float_type=True, error_state=None))
+        return float(get_state(f"input_number.{__name__}_min_profit_per_kwh", float_type=True, error_state=None)) if only_discharge_on_profit_enabled() else 0.0
     except Exception as e:
         _LOGGER.error(f"Failed to get min profit per kwh from input_number.{__name__}_min_profit_per_kwh, using default 0.0: {e} {type(e)}")
         return 0.0
@@ -4647,7 +4647,7 @@ def cheap_grid_charge_hours():
                                 continue
                             
                             profit = loop_price - (price + calc_battery_loss_cost(price) + abs(CONFIG['solar']['powerwall_wear_cost_per_kwh']))
-                            min_profit_per_kwh = get_min_profit_per_kwh() if only_discharge_on_profit_enabled() else 0.0
+                            min_profit_per_kwh = get_min_profit_per_kwh()
                             
                             if profit < min_profit_per_kwh:
                                 _LOGGER.debug(f"Not adding hour {timestamp.replace(hour=hour)} to kwh_with_profit because profit {profit} is lower than min_profit_per_kwh {min_profit_per_kwh}")
@@ -4739,7 +4739,7 @@ def cheap_grid_charge_hours():
                             continue
                         
                         kwh_profit = sorted_price - (price + calc_battery_loss_cost(price) + abs(CONFIG['solar']['powerwall_wear_cost_per_kwh']))
-                        min_profit_per_kwh = get_min_profit_per_kwh() if only_discharge_on_profit_enabled() else 0.0
+                        min_profit_per_kwh = get_min_profit_per_kwh()
                         
                         if kwh_profit < min_profit_per_kwh:
                             continue
@@ -4875,7 +4875,7 @@ def cheap_grid_charge_hours():
                             continue
                                                 
                         kwh_profit = needed_price - (price + calc_battery_loss_cost(price) + abs(CONFIG['solar']['powerwall_wear_cost_per_kwh']))
-                        min_profit_per_kwh = get_min_profit_per_kwh() if only_discharge_on_profit_enabled() else 0.0
+                        min_profit_per_kwh = get_min_profit_per_kwh()
                         
                         if kwh_profit < min_profit_per_kwh:
                             continue
@@ -5256,7 +5256,7 @@ def cheap_grid_charge_hours():
                     excess_profit -= excess_kwh_available_current_hour * loop_battery_kwh_cost
                     
                     kwh_profit = price - loop_battery_kwh_cost
-                    min_profit_per_kwh = get_min_profit_per_kwh() if only_discharge_on_profit_enabled() else 0.0
+                    min_profit_per_kwh = get_min_profit_per_kwh()
                     
                     if kwh_profit < min_profit_per_kwh:
                         continue
