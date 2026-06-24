@@ -4250,7 +4250,7 @@ def cheap_grid_charge_hours():
                     if rule not in chargeHours[hour]:
                         chargeHours[hour][rule] = True
                         
-                _LOGGER.info(f"Adding {hour} {price} valuta/kWh {chargeHours[hour]['battery_level']}% {chargeHours[hour]['kWh']}kWh with keys {rules}")
+                _LOGGER.info(f"Adding {hour} {price} {i18n.t('ui.common.valuta_kwh')} {chargeHours[hour]['battery_level']}% {chargeHours[hour]['kWh']}kWh with keys {rules}")
         except Exception as e:
             _LOGGER.error(f"Error adding to charge hours kwhNeeded:{kwhNeeded} totalCost:{totalCost} totalkWh:{totalkWh} hour:{hour} price:{price} kwh_available:{kwh_available} battery_level:{battery_level} rules:{rules} error:{e} {type(e)}")
             my_persistent_notification(
@@ -4901,13 +4901,13 @@ def cheap_grid_charge_hours():
                                 if what_day != day:
                                     other_day = f"<br><center>**({charging_plan[day]['start_of_day'].date().strftime('%d/%m')})**</center>"
                                 
-                                _LOGGER.info(f"Day:{day} Added charging at hour:{timestamp} battery_level_added:{battery_level_added:.1f}% cost_added:{cost_added:.2f} valuta total_cost before:{charging_plan[day]['total_cost']:.2f}")
+                                _LOGGER.info(f"Day:{day} Added charging at hour:{timestamp} battery_level_added:{battery_level_added:.1f}% cost_added:{cost_added:.2f} {i18n.t('ui.common.valuta')} total_cost before:{charging_plan[day]['total_cost']:.2f}")
                                 charging_plan[day]['total_cost'] += cost_added
                                 reason = (
                                     f"<details><summary>{emoji_parse({'needed_before_max_level_planner': True})}Brug for ({price}/{battery_level_added:.0f}%){other_day}</summary>"
                                     f"Højeste batteriniveau tidspunkt: **{highest_battery_level_timestamp.strftime('%H:%M')}**<br>"
                                     f"Højeste batteriniveau: **{highest_battery_level:.1f}%**<br>"
-                                    f"Aktuel elpris: **{price}** valuta/kWh<br>"
+                                    f"Aktuel elpris: **{price}** {i18n.t('ui.common.valuta_kwh')}<br>"
                                     f"Batteriniveau tilføjet: **{battery_level_added:.2f}%**<br>"
                                     "</details>"
                                     )
@@ -5279,26 +5279,26 @@ def cheap_grid_charge_hours():
                         "profit": excess_profit,
                         "reason": (
                             f"<details><summary>{emoji_parse({'discharging': True})}Sælger overskydende kWh ({excess_profit:.2f}){other_day}</summary>"
-                            f"Battery kWh cost (basis): **{loop_battery_kwh_cost_raw:.2f} valuta/kWh**<br>"
-                            f"Charge/Discharge loss: **{loop_battery_loss_cost:.2f} valuta/kWh**<br>"
-                            f"Wear cost per kWh: **{abs(CONFIG['solar']['powerwall_wear_cost_per_kwh']):.2f} valuta/kWh**<br>"
-                            f"**Samlet battery kWh cost**: **{loop_battery_kwh_cost:.2f} valuta/kWh**<br>"
-                            f"Grid price: **{fixed_price_calc_text}{price:.2f} valuta/kWh**<br>"
+                            f"Battery kWh cost (basis): **{loop_battery_kwh_cost_raw:.2f} {i18n.t('ui.common.valuta_kwh')}**<br>"
+                            f"Charge/Discharge loss: **{loop_battery_loss_cost:.2f} {i18n.t('ui.common.valuta_kwh')}**<br>"
+                            f"Wear cost per kWh: **{abs(CONFIG['solar']['powerwall_wear_cost_per_kwh']):.2f} {i18n.t('ui.common.valuta_kwh')}**<br>"
+                            f"**Samlet battery kWh cost**: **{loop_battery_kwh_cost:.2f} {i18n.t('ui.common.valuta_kwh')}**<br>"
+                            f"Grid price: **{fixed_price_calc_text}{price:.2f} {i18n.t('ui.common.valuta_kwh')}**<br>"
                             f"Excess kWh sold: **{excess_kwh_available_current_hour:.2f} kWh**<br>"
-                            f"Profit from selling: **{excess_profit:.2f} valuta**<br>"
+                            f"Profit from selling: **{excess_profit:.2f} {i18n.t('ui.common.valuta')}**<br>"
                             "</details>"
                         ),
                         }
                     if day == 0 and getHour() == timestamp.hour and getMinute() == 0:
                         my_persistent_notification(
                             f"""{emoji_parse({'discharging': True})}Sælger overskydende kWh ({excess_profit:.2f}){other_day}
-                            Battery kWh cost (basis): **{loop_battery_kwh_cost_raw:.2f} valuta/kWh**
-                            Charge/Discharge loss: **{loop_battery_loss_cost:.2f} valuta/kWh**
-                            Wear cost per kWh: **{abs(CONFIG['solar']['powerwall_wear_cost_per_kwh']):.2f} valuta/kWh**
-                            **Samlet battery kWh cost**: **{loop_battery_kwh_cost:.2f} valuta/kWh**
-                            Grid price: **{fixed_price_calc_text}{price:.2f} valuta/kWh**
+                            Battery kWh cost (basis): **{loop_battery_kwh_cost_raw:.2f} {i18n.t('ui.common.valuta_kwh')}**
+                            Charge/Discharge loss: **{loop_battery_loss_cost:.2f} {i18n.t('ui.common.valuta_kwh')}**
+                            Wear cost per kWh: **{abs(CONFIG['solar']['powerwall_wear_cost_per_kwh']):.2f} {i18n.t('ui.common.valuta_kwh')}**
+                            **Samlet battery kWh cost**: **{loop_battery_kwh_cost:.2f} {i18n.t('ui.common.valuta_kwh')}**
+                            Grid price: **{fixed_price_calc_text}{price:.2f} {i18n.t('ui.common.valuta_kwh')}**
                             Excess kWh sold: **{excess_kwh_available_current_hour:.2f} kWh**
-                            Profit from selling: **{excess_profit:.2f} valuta**""",
+                            Profit from selling: **{excess_profit:.2f} {i18n.t('ui.common.valuta')}**""",
                             title=f"{TITLE} force_discharge_timestamps {timestamp}",
                             persistent_notification_id=f"{__name__}_{func_name}_{sub_func_name}_{sub_sub_func_name}force_discharge_timestamps_{timestamp}"
                         )
@@ -5319,14 +5319,14 @@ def cheap_grid_charge_hours():
                 charging_plan[day]["force_discharge_timestamps_empty"] = (
                         f"<details><summary>⚠️Ingen gode tidspunkter at sælge overskydende kWh på ({profit:.2f})</summary>"
                         f"{hour_excluded}"
-                        f"Battery kWh cost (basis): <b>{battery_kwh_cost_raw:.2f} valuta/kWh</b><br>"
-                        f"Charge/Discharge loss: <b>{battery_loss_cost:.2f} valuta/kWh</b><br>"
-                        f"Wear cost per kWh: <b>{abs(CONFIG['solar']['powerwall_wear_cost_per_kwh']):.2f} valuta/kWh</b><br>"
-                        f"<b>Samlet battery kWh cost: {battery_kwh_cost:.2f} valuta/kWh</b><br>"
+                        f"Battery kWh cost (basis): <b>{battery_kwh_cost_raw:.2f} {i18n.t('ui.common.valuta_kwh')}</b><br>"
+                        f"Charge/Discharge loss: <b>{battery_loss_cost:.2f} {i18n.t('ui.common.valuta_kwh')}</b><br>"
+                        f"Wear cost per kWh: <b>{abs(CONFIG['solar']['powerwall_wear_cost_per_kwh']):.2f} {i18n.t('ui.common.valuta_kwh')}</b><br>"
+                        f"<b>Samlet battery kWh cost: {battery_kwh_cost:.2f} {i18n.t('ui.common.valuta_kwh')}</b><br>"
                         f"Maks pris tidspunkt i dag: <b>{max_price_timestamp if max_price_timestamp else 'N/A'}</b><br>"
-                        f"Maks pris for at sælge i dag: <b>{max_price:.2f} valuta/kWh</b><br>"
-                        f"Minimum fortjeneste pr. kWh: <b>{min_profit_per_kwh:.2f} valuta/kWh</b><br>"
-                        f"Profit from selling: <b>{profit:.2f} valuta/kWh</b><br>"
+                        f"Maks pris for at sælge i dag: <b>{max_price:.2f} {i18n.t('ui.common.valuta_kwh')}</b><br>"
+                        f"Minimum fortjeneste pr. kWh: <b>{min_profit_per_kwh:.2f} {i18n.t('ui.common.valuta_kwh')}</b><br>"
+                        f"Profit from selling: <b>{profit:.2f} {i18n.t('ui.common.valuta_kwh')}</b><br>"
                         "</details>"
                     )
                 
