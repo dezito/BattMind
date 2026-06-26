@@ -160,6 +160,9 @@ entity:
     use_midnight_battery_level:
       name: "Brug midnat batteriniveau"
       description: "Aktiver denne for at bruge batteriniveauet ved midnat for Sælg overskydende kWh tilgængelig, i stedet for næste dags laveste batteriniveau, inden ladning"
+    most_profit:
+      name: "Afladning: Maksimer profit"
+      description: "Aktiver denne for at aflade når det giver mest profit, i stedet for kun at aflade når det er profitabelt"
 
   # ---- input_number ----
   input_number:
@@ -187,6 +190,10 @@ entity:
       name: "Min. profit per kWh ved afladning"
       description: "Minimum profit per kWh for at tillade afladning"
       unit_of_measurement: kr/kWh
+    min_sell_kwh:
+      name: "Min. overskydende kWh til salg"
+      description: "Minimum overskydende kWh til salg for at tillade afladning"
+      unit_of_measurement: kWh
   
   # ---- input_text ----
   input_text:

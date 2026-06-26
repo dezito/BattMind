@@ -157,6 +157,9 @@ entity:
     use_midnight_battery_level:
       name: "Mitternachts-Batteriestand verwenden"
       description: "Aktiviere dies, um den Batteriestand um Mitternacht für 'Überschüssige kWh verkaufen' zu verwenden, anstelle des niedrigsten Batteriestands des nächsten Tages vor dem Laden"
+    most_profit:
+      name: "Entladen: Gewinn maximieren"
+      description: "Aktiviere dies, um dann zu entladen, wenn der höchste Gewinn erzielt wird, anstatt nur bei profitablem Entladen"
 
   input_number:
     kwh_charged_by_solar:
@@ -169,22 +172,22 @@ entity:
     cheap_price_periods:
       name: "Günstige Preiszeiträume"
       description: "Maximale Anzahl günstiger Zeiträume zur Planung"
-
     cheapest_price_rise_threshold:
       name: "Anstieg für niedrigsten Preis"
       description: "Preissteigerung zur Definition des niedrigsten Preises"
       unit_of_measurement: "€/kWh"
-
     cheap_price_period_rise_threshold:
       name: "Anstieg für günstige Zeiträume"
       description: "Preissteigerung zur Definition günstiger Zeiträume basierend auf dem niedrigsten Preis"
       unit_of_measurement: "€/kWh"
-
     min_profit_per_kwh:
       name: "Min. Gewinn pro kWh bei Entladung"
       description: "Mindestgewinn pro kWh, um Entladung zu erlauben"
       unit_of_measurement: "€/kWh"
-
+    min_sell_kwh:
+      name: "Min. überschüssige kWh zum Verkauf"
+      description: "Mindestmenge an überschüssigen kWh zum Verkauf, um das Entladen zu erlauben"
+      unit_of_measurement: kWh
   # ---- input_text ----
   input_text:
     exclude_sell_hours:
