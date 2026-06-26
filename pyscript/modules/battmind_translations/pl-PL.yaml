@@ -157,6 +157,9 @@ entity:
     use_midnight_battery_level:
       name: "Użyj poziomu baterii o północy"
       description: "Włącz, aby używać poziomu baterii o północy dla 'Sprzedaj nadwyżkę kWh', zamiast najniższego poziomu baterii następnego dnia przed ładowaniem"
+    most_profit:
+      name: "Rozładowanie: Maksymalizuj zysk"
+      description: "Włącz, aby rozładowywać wtedy, gdy przynosi to największy zysk, zamiast tylko wtedy, gdy jest to opłacalne"
 
   input_number:
     kwh_charged_by_solar:
@@ -169,21 +172,22 @@ entity:
     cheap_price_periods:
       name: "Tanie okresy cenowe"
       description: "Maksymalna liczba tanich okresów do zaplanowania"
-
     cheapest_price_rise_threshold:
       name: "Wzrost dla najniższej ceny"
       description: "Wzrost ceny używany do zdefiniowania najniższej ceny"
       unit_of_measurement: "zł/kWh"
-
     cheap_price_period_rise_threshold:
       name: "Wzrost dla tanich okresów"
       description: "Wzrost ceny używany do zdefiniowania tanich okresów względem najniższej ceny"
       unit_of_measurement: "zł/kWh"
-
     min_profit_per_kwh:
       name: "Min. zysk na kWh przy rozładowaniu"
       description: "Minimalny zysk na kWh wymagany do rozładowania"
       unit_of_measurement: "zł/kWh"
+    min_sell_kwh:
+      name: "Min. nadwyżka kWh do sprzedaży"
+      description: "Minimalna nadwyżka kWh przeznaczona do sprzedaży, aby zezwolić na rozładowanie"
+      unit_of_measurement: kWh
 
   # ---- input_text ----
   input_text:

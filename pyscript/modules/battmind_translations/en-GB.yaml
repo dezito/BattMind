@@ -157,6 +157,9 @@ entity:
     use_midnight_battery_level:
       name: "Use midnight battery level"
       description: "Enable this to use the battery level at midnight for 'Sell excess kWh available', instead of the next day's lowest battery level before charging"
+    most_profit:
+      name: "Discharging: Maximise profit"
+      description: "Enable this to discharge when it delivers the highest profit, instead of only discharging when it is profitable"
 
   input_number:
     kwh_charged_by_solar:
@@ -169,21 +172,22 @@ entity:
     cheap_price_periods:
       name: "Cheap price periods"
       description: "Maximum number of cheap price periods to plan for"
-
     cheapest_price_rise_threshold:
       name: "Increase for cheapest price"
       description: "Price increase used to define the cheapest price"
       unit_of_measurement: "£/kWh"
-
     cheap_price_period_rise_threshold:
       name: "Increase for cheap periods"
       description: "Price increase used to define cheap price periods based on the cheapest price"
       unit_of_measurement: "£/kWh"
-
     min_profit_per_kwh:
       name: "Min. profit per kWh when discharging"
       description: "Minimum profit per kWh required to allow discharging"
       unit_of_measurement: "£/kWh"
+    min_sell_kwh:
+      name: "Minimum excess kWh for export"
+      description: "Minimum excess kWh available for export before discharging is allowed"
+      unit_of_measurement: kWh
 
   # ---- input_text ----
   input_text:
