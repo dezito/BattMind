@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import hashlib
 import json
 import random
 import string
@@ -109,14 +110,13 @@ TESTING = False
 SOLAR_CONFIGURED = None
 POWERWALL_CONFIGURED = None
 
+LAST_HASH_RESULTS = {}
 LAST_SUCCESSFUL_GRID_PRICES = {
     "using_offline_prices": False
 }
 
-CHARGING_IS_BEGINNING = False
-RESTARTING_CHARGER = False
-CURRENT_CHARGING_AMPS = [0, 0, 0]
 
+DAYS_TO_PREDICT = 3
 ERROR_COUNT = 0
 
 ENTITY_UNAVAILABLE_STATES = (None, "unavailable", "unknown")
@@ -322,7 +322,7 @@ DEFAULT_ENTITIES = {
     "homeassistant": {
         "customize": {
             f"input_select.battmind_select_release": {},
-            f"input_select.{__name__}_consumption_forecast_type": {},
+            f"input_select.{__name__}_forecast_type": {},
             
             f"input_button.{__name__}_enforce_planning": {},
             f"input_button.{__name__}_restart_script": {},
@@ -359,7 +359,7 @@ DEFAULT_ENTITIES = {
             "initial":"latest",
             "icon":"mdi:form-select"
         },
-        f"{__name__}_consumption_forecast_type":{
+        f"{__name__}_forecast_type":{
             "options":[
                 "Average",
                 "EMA (Exponential Moving Average)",
@@ -458,7 +458,7 @@ DEFAULT_ENTITIES = {
         },
         f"{__name__}_min_sell_kwh":{
             "min": 0.2,
-            "max": 10,
+            "max": 1,
             "step": 0.1,
             "mode":"box",
             "unit_of_measurement": "kWh",
@@ -960,6 +960,7 @@ def get_debug_info_sections():
                 "SOLAR_CONFIGURED": SOLAR_CONFIGURED,
                 "POWERWALL_CONFIGURED": POWERWALL_CONFIGURED,
                 "CONFIG_LAST_MODIFIED": datetime.datetime.fromtimestamp(CONFIG_LAST_MODIFIED) if isinstance(CONFIG_LAST_MODIFIED, (float, int)) else CONFIG_LAST_MODIFIED,
+                "FORECAST_TYPE": FORECAST_TYPE,
             }),
             "details": format_debug_details({"CONFIG": CONFIG}),
         },
@@ -971,9 +972,7 @@ def get_debug_info_sections():
                 }),
         },
         "Charging Plan & Price Logic": {
-            "table": format_debug_table({
-                "CURRENT_CHARGING_AMPS": CURRENT_CHARGING_AMPS,
-            }),
+            "table": None,
             "details": format_debug_details({
                 "CHARGING_PLAN": CHARGING_PLAN,
                 "CHARGE_HOURS": CHARGE_HOURS,
@@ -1000,11 +999,11 @@ def get_debug_info_sections():
         },
         "Runtime Counters & Errors": {
             "table": format_debug_table({
-                "CHARGING_IS_BEGINNING": CHARGING_IS_BEGINNING,
                 "ERROR_COUNT": ERROR_COUNT,
-                "RESTARTING_CHARGER": RESTARTING_CHARGER,
             }),
-            "details": None,
+            "details": format_debug_details({
+                "LAST_HASH_RESULTS": LAST_HASH_RESULTS
+            }),
         },
         "Task Runtime State": {
             "table": format_debug_table({
@@ -1581,6 +1580,8 @@ def set_charging_rule(text=""):
 def restart_script():
     func_name = "restart_script"
     _LOGGER = globals()['_LOGGER'].getChild(func_name)
+    
+    shutdown()
     
     _LOGGER.info("Restarting script")
     set_charging_rule(f"📟{i18n.t('ui.restart_script.message')}")
@@ -2658,11 +2659,15 @@ def deactivate_script_enabled():
     if get_state(f"input_boolean.{__name__}_deactivate_script") == "on":
         return True
     
-def consumption_forecast_type():
-    forecast_type = get_state(f"input_select.{__name__}_consumption_forecast_type", error_state="ema").lower()
+def get_forecast_type():
+    global FORECAST_TYPE
+    forecast_type = get_state(f"input_select.{__name__}_forecast_type", error_state="ema").split(" ")[0].lower()
     
-    if "ema" in forecast_type in ("ema", "average", "trend"):
+    if forecast_type in ("average", "ema", "trend"):
+        FORECAST_TYPE = forecast_type
         return forecast_type
+    
+    FORECAST_TYPE = "ema"
     return "ema"
 
 def cheapest_hour_fill_planner_enabled():
@@ -4131,9 +4136,102 @@ def find_nth_local_min(
     if n - 1 < len(minima):
         return minima[n - 1]
     return None
+        
+def get_hash_dict():
+    global LAST_HASH_RESULTS, BATTERY_LEVEL_EXPENSES, LAST_SUCCESSFUL_GRID_PRICES, LOCAL_ENERGY_PREDICTION_DB
+    
+    return {
+        "CURRENT_HOUR": reset_time_to_hour(),
+        "FORECAST_TYPE": FORECAST_TYPE,
+        #"LOCAL_ENERGY_PREDICTION_DB": LOCAL_ENERGY_PREDICTION_DB,
+        "LAST_SUCCESSFUL_GRID_PRICES": LAST_SUCCESSFUL_GRID_PRICES,
+        "BATTERY_LEVEL": get_battery_level(),
+        "BATTERY_LEVEL_EXPENSES": BATTERY_LEVEL_EXPENSES,
+        "SETTINGS": (
+            get_cheap_price_periods(),
+            get_cheap_price_period_rise_threshold(),
+            get_exclude_sell_hours(),
+            get_min_profit_per_kwh(),
+            get_min_sell_kwh(),
+            cheapest_hour_fill_planner_enabled(),
+            cheapest_hour_fill_up_enabled(),
+            most_expensive_planner_enabled(),
+            needed_before_max_level_planner_enabled(),
+            only_discharge_on_profit_enabled(),
+            prioritize_discharge_hours_by_energy_cost_enabled(),
+            sell_excess_kwh_available_enabled(),
+            use_midnight_battery_level_enabled(),
+            most_profit_enabled(),
+        ),
+    }
+    
+def make_hashable_snapshot(data):
+    def normalize_for_hash_key(key):
+        if isinstance(key, (datetime.datetime, datetime.date, datetime.time)):
+            return key.isoformat()
+
+        return str(key)
+    
+    def normalize_for_hash(obj):
+        if isinstance(obj, dict):
+            return {
+                normalize_for_hash_key(key): normalize_for_hash(value)
+                for key, value in obj.items()
+            }
+
+        if isinstance(obj, list):
+            return [normalize_for_hash(value) for value in obj]
+        elif isinstance(obj, tuple):
+            return [normalize_for_hash(value) for value in obj]
+        elif isinstance(obj, set):
+            return sorted(normalize_for_hash(value) for value in obj)
+        elif isinstance(obj, (datetime.datetime, datetime.date, datetime.time)):
+            return obj.isoformat()
+
+        return obj
+    
+    normalized_data = normalize_for_hash(data)
+
+    json_data = json.dumps(
+        normalized_data,
+        sort_keys=True,
+        default=str,
+        separators=(",", ":")
+    )
+
+    return hashlib.blake2b(json_data.encode(), digest_size=16).hexdigest()
 
 @benchmark_decorator()
-def cheap_grid_charge_hours():
+def save_hashable_snapshot():
+    func_name = "save_hashable_snapshot"
+    _LOGGER = globals()['_LOGGER'].getChild(func_name)
+    global LAST_HASH_RESULTS
+    
+    for key, item in get_hash_dict().items():
+        LAST_HASH_RESULTS[key] = make_hashable_snapshot(item)
+
+@benchmark_decorator()
+def should_skip_calculation():
+    func_name = "should_skip_calculation"
+    _LOGGER = globals()['_LOGGER'].getChild(func_name)
+    global LAST_HASH_RESULTS
+    skip_calculation = True
+    
+    for key, item in get_hash_dict().items():
+        if key not in LAST_HASH_RESULTS:
+            skip_calculation = False
+            continue
+        
+        item_hash = make_hashable_snapshot(item)
+        
+        if item_hash != LAST_HASH_RESULTS[key]:
+            skip_calculation = False
+            _LOGGER.info(f"Hash snapshot changed for {key}: {LAST_HASH_RESULTS[key]} != {item_hash}")
+    
+    return skip_calculation
+
+@benchmark_decorator()
+def cheap_grid_charge_hours(force_recalculate = False):
     func_name = "cheap_grid_charge_hours"
     func_prefix = f"{func_name}_"
     _LOGGER = globals()['_LOGGER'].getChild(func_name)
@@ -4148,18 +4246,30 @@ def cheap_grid_charge_hours():
         )
         return
     
-    FORECAST_TYPE = consumption_forecast_type()
+    try:
+        TASKS[f"{func_prefix}get_forecast_type"] = task.create(get_forecast_type)
+        TASKS[f"{func_prefix}current_battery_level_expenses"] = task.create(current_battery_level_expenses)
+        TASKS[f"{func_prefix}local_energy_prediction"] = task.create(local_energy_prediction)
+        done, pending = task.wait({TASKS[f"{func_prefix}get_forecast_type"], TASKS[f"{func_prefix}current_battery_level_expenses"], TASKS[f"{func_prefix}local_energy_prediction"]})
+    except (asyncio.CancelledError, asyncio.TimeoutError, KeyError) as e:
+        _LOGGER.warning(f"Cancelled/Timeout/KeyError in cheap_grid_charge_hours: {e} {type(e)}")
+        return
+    except Exception as e:
+        _LOGGER.error(f"Error in cheap_grid_charge_hours: {e} {type(e)}")
+        raise Exception(f"Error in cheap_grid_charge_hours: {e} {type(e)}")
+    finally:
+        task_cancel(func_prefix, task_remove=True, startswith=True)
     
-    amount_of_days = 3
+    if should_skip_calculation() and not force_recalculate:
+        _LOGGER.error("Hash is the same, skipping calculation")
+        return
     
-    current_battery_level_expenses()
-    local_energy_prediction()
+    amount_of_days = DAYS_TO_PREDICT
     
-    hour_prices = deepcopy(get_hour_prices())
-    sorted_by_cheapest_price = sorted(hour_prices.items(), key=lambda kv: (kv[1], kv[0]))
-    
-    grid_prices = deepcopy(hour_prices)
+    grid_prices = deepcopy(get_hour_prices())
     grid_sell_prices = deepcopy(get_hour_prices(sell_prices=True))
+    sorted_by_cheapest_price = sorted(grid_prices.items(), key=lambda kv: (kv[1], kv[0]))
+    energy_prediction_db = deepcopy(LOCAL_ENERGY_PREDICTION_DB)
     
     battery_expenses = deepcopy(BATTERY_LEVEL_EXPENSES)
 
@@ -4568,7 +4678,7 @@ def cheap_grid_charge_hours():
                 ignore_price_diff = get_cheap_price_period_rise_threshold()
                 
                 
-                for timestamp, price in hour_prices.items():
+                for timestamp, price in grid_prices.items():
                     from_timestamp = charging_plan[day]["start_of_day"] - datetime.timedelta(hours=6) if day > 0 else charging_plan[day]["start_of_day"]
                     to_timestamp = charging_plan[day]["end_of_day"]
                     if not in_between(timestamp, from_timestamp, to_timestamp) or timestamp < current_hour:
@@ -4589,7 +4699,7 @@ def cheap_grid_charge_hours():
                     
                     for hour in range(timestamp.hour, 24):
                         loop_timestamp = timestamp.replace(hour=hour)
-                        loop_price = hour_prices.get(loop_timestamp, None)
+                        loop_price = grid_prices.get(loop_timestamp, None)
                         if loop_price is None:
                             continue
                         
@@ -4654,7 +4764,7 @@ def cheap_grid_charge_hours():
                             break
                         
                         timestamp = cheap_timestamp - datetime.timedelta(hours=i)
-                        price = hour_prices[timestamp]
+                        price = grid_prices[timestamp]
                         what_day = daysBetween(current_hour, timestamp)
                         
                         if what_day < day - 1:
@@ -4666,7 +4776,7 @@ def cheap_grid_charge_hours():
                         
                         kwh_with_profit = []
                         for hour in range(timestamp.hour, 24):
-                            loop_price = hour_prices.get(timestamp.replace(hour=hour), None)
+                            loop_price = grid_prices.get(timestamp.replace(hour=hour), None)
                             
                             if loop_price is None:
                                 continue
@@ -4843,7 +4953,7 @@ def cheap_grid_charge_hours():
                             break
                     
                     for remove_timestamp in remove_list:
-                        sorted_by_cheapest_price.pop(sorted_by_cheapest_price.index((remove_timestamp, hour_prices[remove_timestamp])))
+                        sorted_by_cheapest_price.pop(sorted_by_cheapest_price.index((remove_timestamp, grid_prices[remove_timestamp])))
             except Exception as e:
                 _LOGGER.error(f"Error in most_expensive_planner day:{day}: {e} {type(e)}")
                 save_error_to_file(f"Error in most_expensive_planner day:{day}: {e} {type(e)}")
@@ -4885,7 +4995,7 @@ def cheap_grid_charge_hours():
                     continue
                 
                 needed_timestamp = charging_plan[day]["start_of_day"].replace(hour=hour)
-                needed_price = hour_prices.get(needed_timestamp, None)
+                needed_price = grid_prices.get(needed_timestamp, None)
                 
                 finished = False
                 
@@ -5232,6 +5342,12 @@ def cheap_grid_charge_hours():
                     continue
                 
                 kwh = percentage_to_kwh(battery_level, include_charging_loss = True)
+                
+                min_sell_kwh = get_min_sell_kwh()
+                
+                if kwh < min_sell_kwh:
+                    continue
+                
                 battery_kwh_cost_raw, battery_loss_cost, battery_kwh_cost = _get_predicted_battery_cost(what_day, predicted_battery_level = battery_level)
                 
                 grid_sell_price = grid_sell_prices_for_day[timestamp]
@@ -5243,7 +5359,14 @@ def cheap_grid_charge_hours():
                 battery_kwh_cost = round(battery_kwh_cost, 2)
                 grid_sell_profit = round(grid_sell_profit, 2)
                 
-                if grid_sell_profit > sum(powerwall_usage_profit_total):
+                sell_profit = grid_sell_profit - sum(powerwall_usage_profit_total)
+                
+                min_sell_profit = min_profit_per_kwh * kwh
+                
+                if sell_profit > 0.0:
+                    _LOGGER.error(f"day:{day} hour:{hour} timestamp:{timestamp} grid_sell_profit:{grid_sell_profit} powerwall_usage_profit_total:{sum(powerwall_usage_profit_total)} sell_profit:{sell_profit} min_sell_profit:{min_sell_profit}")
+                
+                if sell_profit > min_sell_profit:
                     diff = grid_sell_profit - sum(powerwall_usage_profit_total)
                     _LOGGER.info(f"day:{day} hour:{hour} timestamp:{timestamp} grid_sell_price:{grid_sell_price} battery_kwh_cost:{battery_kwh_cost} grid_sell_profit:{grid_sell_profit} > powerwall_usage_profit_total:{sum(powerwall_usage_profit_total)}:{grid_sell_profit > sum(powerwall_usage_profit_total)}")
 
@@ -5308,10 +5431,10 @@ def cheap_grid_charge_hours():
             
             min_sell_kwh = get_min_sell_kwh()
             
-            if excess_kwh_available < min_sell_kwh and excess_kwh_available > 0.0:
+            if (excess_kwh_available < min_sell_kwh and excess_kwh_available > 0.0) or excess_kwh_available <= 0.0:
                 _LOGGER.warning(f"Excess kWh available for day:{day} is {excess_kwh_available:.2f}kWh at lowest battery level of {lowest_battery_level:.1f}% at timestamp:{lowest_timestamp}, which is at or below 1.0kWh, skipping selling excess kWh")
                 charging_plan[day]["force_discharge_timestamps_empty"] = (
-                        f"<details><summary>⚠️Ingen gode tidspunkter at sælge overskydende kWh på, da tilgængelige kWh er for lavt ({excess_kwh_available:.1f}kWh)</summary>"
+                        f"<details><summary>⚠️ Ingen overskydende kWh tilgængelig at sælge</summary>"
                         f"Laveste batteriniveau timestamp: **{lowest_timestamp}**<br>"
                         f"Laveste batteriniveau: **{lowest_battery_level:.1f}%**<br>"
                         f"Batteri kWh tilgængelig at sælge: **{excess_kwh_available:.2f} kWh**<br>"
@@ -5321,7 +5444,7 @@ def cheap_grid_charge_hours():
                 return
             
             if using_next_day:
-                _LOGGER.debug(f"Using lowest battery level of next day before battery charging for calculating excess_kwh_available for day:{day} which is at {lowest_timestamp} with battery level:{lowest_battery_level:.1f}% resulting in excess_kwh_available:{excess_kwh_available:.2f}kWh")
+                _LOGGER.info(f"Using lowest battery level of next day before battery charging for calculating excess_kwh_available for day:{day} which is at {lowest_timestamp} with battery level:{lowest_battery_level:.1f}% resulting in excess_kwh_available:{excess_kwh_available:.2f}kWh")
             
             discharge_hours_needed = int(round_up(excess_kwh_available / (abs(MAX_KWH_DISCHARGING))))
             
@@ -5614,20 +5737,20 @@ def cheap_grid_charge_hours():
             charging_plan[day]['hour_cost_prediction']['ema'][hour] = {
                 "percentage": kwh_to_percentage(ema),
                 "kwh": ema,
-                "price": hour_prices.get(dt, 0.0),
-                "cost": hour_prices.get(dt, 0.0) * ema
+                "price": grid_prices.get(dt, 0.0),
+                "cost": grid_prices.get(dt, 0.0) * ema
             }
             charging_plan[day]['hour_cost_prediction']['trend'][hour] = {
                 "percentage": kwh_to_percentage(trend),
                 "kwh": trend,
-                "price": hour_prices.get(dt, 0.0),
-                "cost": hour_prices.get(dt, 0.0) * trend
+                "price": grid_prices.get(dt, 0.0),
+                "cost": grid_prices.get(dt, 0.0) * trend
             }
             charging_plan[day]['hour_cost_prediction']['avg'][hour] = {
                 "percentage": kwh_to_percentage(avg),
                 "kwh": avg,
-                "price": hour_prices.get(dt, 0.0),
-                "cost": hour_prices.get(dt, 0.0) * avg
+                "price": grid_prices.get(dt, 0.0),
+                "cost": grid_prices.get(dt, 0.0) * avg
             }
             
             charging_plan[day]["discharge_timestamps"].append(start_of_day_datetime.replace(hour=hour))
@@ -5672,9 +5795,9 @@ def cheap_grid_charge_hours():
             dict_sorted = sorted(charging_plan[day]['grouped_hour_cost_prediction'][forecast_type].items(), key=lambda kv: (kv[1]['total_cost'], kv[0]), reverse=True)
             
             charging_plan[day]['grouped_sorted_hour_cost_prediction'][forecast_type] = [s[0] for s in dict_sorted]
-            
-            charging_plan[day]['solar_kwh_prediction'] = LOCAL_ENERGY_PREDICTION_DB.get('solar_prediction', {}).get(day, {}).get('total', [])
-            charging_plan[day]['solar_cost_prediction'] = LOCAL_ENERGY_PREDICTION_DB.get('solar_prediction', {}).get(day, {}).get('total_sell', [])
+        
+        charging_plan[day]['solar_kwh_prediction'] = energy_prediction_db.get('solar_prediction', {}).get(day, {}).get('total', [])
+        charging_plan[day]['solar_cost_prediction'] = energy_prediction_db.get('solar_prediction', {}).get(day, {}).get('total_sell', [])
         
         solar_kwh_sum = sum(charging_plan[day]['solar_kwh_prediction'])
         
@@ -5954,7 +6077,7 @@ def cheap_grid_charge_hours():
             else:
                 overview.append(f"\n**{i18n.t('ui.common.total')} {int(round(chargeHours['total_procent'],0))}% {chargeHours['total_kwh']} kWh {chargeHours['total_cost']:.2f}{i18n.t('ui.common.valuta')} ({round(chargeHours['total_cost'] / chargeHours['total_kwh'],2)} {i18n.t('ui.common.valuta_kwh')})**")
                             
-            if "using_offline_prices" in hour_prices and hour_prices['using_offline_prices']:
+            if "using_offline_prices" in grid_prices and grid_prices['using_offline_prices']:
                 def _build_header(n_pairs=4):
                     heads, aligns = [], []
                     for _ in range(n_pairs):
@@ -5976,7 +6099,7 @@ def cheap_grid_charge_hours():
                 overview.append(f"\n\n<details><summary><b>{i18n.t('ui.cheap_grid_charge_hours.offline_prices')}!!!</b></summary>\n")
 
                 by_day = defaultdict(list)
-                for ts, price in sorted(hour_prices["missing_hours"].items(), key=lambda kv: kv[0]):
+                for ts, price in sorted(grid_prices["missing_hours"].items(), key=lambda kv: kv[0]):
                     by_day[ts.date()].append((ts.strftime("%H:%M"), f"{price:.2f}{i18n.t('ui.common.valuta')}"))
                     
                 N_PAIRS = 4
@@ -6256,6 +6379,8 @@ def cheap_grid_charge_hours():
         set_attr(f"sensor.{__name__}_overview.overview", "\n".join(overview))
     else:
         set_attr(f"sensor.{__name__}_overview.overview", "Ingen data")
+    
+    save_hashable_snapshot()
     
     return chargeHours
 
@@ -6991,24 +7116,24 @@ def local_energy_prediction(powerwall_charging_timestamps = False):
             power_factor = 0.5 if loop_datetime in solar_forecast_from_integration else 1.0
             power_factor *= current_hour_factor
             power_cost = get_database_kwh(cloudiness, loop_datetime)
-            loop_kwh.append(power_cost[0] * power_factor)
-            loop_sell.append(power_cost[1] * power_factor)
-            total_db.append(round(power_cost[0], 3))
-            total_db_sell.append(round(power_cost[1], 3))
+            loop_kwh.append(round(power_cost[0] * power_factor, 1))
+            loop_sell.append(round(power_cost[1] * power_factor, 1))
+            total_db.append(round(power_cost[0], 1))
+            total_db_sell.append(round(power_cost[1], 1))
 
         # Solar forecast
         if loop_datetime in solar_forecast_from_integration:
             power_factor = 1.5 if cloudiness is not None else 1.0
             power_factor *= current_hour_factor
-            loop_kwh.append(solar_forecast_from_integration[loop_datetime][0] * power_factor)
-            loop_sell.append(solar_forecast_from_integration[loop_datetime][1] * power_factor)
-            total_forecast.append(round(solar_forecast_from_integration[loop_datetime][0], 3))
-            total_forecast_sell.append(round(solar_forecast_from_integration[loop_datetime][1], 3))
+            loop_kwh.append(round(solar_forecast_from_integration[loop_datetime][0] * power_factor, 1))
+            loop_sell.append(round(solar_forecast_from_integration[loop_datetime][1] * power_factor, 1))
+            total_forecast.append(round(solar_forecast_from_integration[loop_datetime][0], 1))
+            total_forecast_sell.append(round(solar_forecast_from_integration[loop_datetime][1], 1))
             
         # Average forecast
         if loop_kwh:
-            loop_kwh = round(average(loop_kwh), 3)
-            loop_sell = round(average(loop_sell), 3)
+            loop_kwh = round(average(loop_kwh), 1)
+            loop_sell = round(average(loop_sell), 1)
             total_avg.append(loop_kwh)
             total_avg_sell.append(loop_sell)
                 
@@ -7065,8 +7190,8 @@ def local_energy_prediction(powerwall_charging_timestamps = False):
                     "total_sell": total_sell
                 }
             
-            total = round(sum(total), 3)
-            total_sell = round(average(total_sell), 3)
+            total = round(sum(total), 1)
+            total_sell = round(average(total_sell), 1)
             
             if day == 0:
                 output['today'] = total
@@ -7083,7 +7208,7 @@ def local_energy_prediction(powerwall_charging_timestamps = False):
 
     sell_price = float(get_state(f"input_number.{__name__}_solar_sell_fixed_price", float_type=True, error_state=CONFIG['solar']['production_price']))
     stop_prediction_before = 3
-    days = 7
+    days = DAYS_TO_PREDICT
     today = getTimeStartOfDay()
     output = {
         "avg": 0,
@@ -7214,7 +7339,7 @@ def no_charging_modes_active():
     return False
 
 @benchmark_decorator()
-def charge_if_needed():
+def charge_if_needed(force_recalculate = False):
     func_name = "charge_if_needed"
     func_prefix = f"{func_name}_"
     _LOGGER = globals()['_LOGGER'].getChild(func_name)
@@ -7229,7 +7354,7 @@ def charge_if_needed():
         charging_rule = i18n.t('ui.charge_if_needed.not_charging')
         powerwall_action = "force_solar_only_charging"
         
-        TASKS[f"{func_prefix}cheap_grid_charge_hours"] = task.create(cheap_grid_charge_hours)
+        TASKS[f"{func_prefix}cheap_grid_charge_hours"] = task.create(cheap_grid_charge_hours, force_recalculate=force_recalculate)
         done, pending = task.wait({TASKS[f"{func_prefix}cheap_grid_charge_hours"]})
         
         to_timestamp = getTime()
@@ -7757,8 +7882,12 @@ if INITIALIZATION_COMPLETE:
             if deactivate_script_enabled():
                 return
             
+            force_recalculate = False
+            if var_name == f"input_button.{__name__}_enforce_planning":
+                force_recalculate = True
+            
             task_cancel("charge_if_needed", task_remove=True, contains=True)
-            TASKS[f"{func_prefix}charge_if_needed"] = task.create(charge_if_needed)
+            TASKS[f"{func_prefix}charge_if_needed"] = task.create(charge_if_needed, force_recalculate)
             done, pending = task.wait({TASKS[f"{func_prefix}charge_if_needed"]})
             
             if var_name == f"input_button.{__name__}_enforce_planning" and TESTING:
@@ -7925,4 +8054,5 @@ if INITIALIZATION_COMPLETE:
 def restart(trigger_type=None, var_name=None, value=None, old_value=None):
     func_name = "restart"
     _LOGGER = globals()['_LOGGER'].getChild(func_name)
+    
     restart_script()

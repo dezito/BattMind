@@ -114,6 +114,9 @@ entity:
     battmind_select_release:
       name: "Select Battmind release"
       description: "Choose the release to upgrade to"
+    forecast_type:
+      name: "Select forecast type"
+      description: "Select forecast type (EMA, average or trend)"
 
   input_button:
     enforce_planning:

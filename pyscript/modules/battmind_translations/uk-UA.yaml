@@ -114,6 +114,9 @@ entity:
     battmind_select_release:
       name: "Вибрати версію Battmind"
       description: "Виберіть версію для оновлення"
+    forecast_type:
+      name: "Вибрати тип прогнозу"
+      description: "Виберіть тип прогнозу (EMA, середнє або тренд)"
 
   input_button:
     enforce_planning:

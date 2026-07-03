@@ -114,6 +114,9 @@ entity:
     battmind_select_release:
       name: "Wybierz wersję Battmind"
       description: "Wybierz wersję do aktualizacji"
+    forecast_type:
+      name: "Wybierz typ prognozy"
+      description: "Wybierz typ prognozy (EMA, średnia lub trend)"
 
   input_button:
     enforce_planning:
