@@ -37,7 +37,8 @@ from hass_manager import (
     get_manufacturer,
     get_identifiers,
     get_integration,
-    reload_integration)
+    reload_integration,
+    get_sun_events,)
 from history import (
     interpolate_data,
     get_values,
@@ -98,8 +99,6 @@ from utils import (
     time_window_parabolic_weight,
     time_window_gaussian_weight)
 
-import homeassistant.helpers.sun as sun
-
 from logging import getLogger
 TITLE = f"BattMind ({__name__}.py)"
 BASENAME = f"pyscript.{__name__}"
@@ -114,7 +113,6 @@ LAST_HASH_RESULTS = {}
 LAST_SUCCESSFUL_GRID_PRICES = {
     "using_offline_prices": False
 }
-
 
 DAYS_TO_PREDICT = 3
 ERROR_COUNT = 0
@@ -2775,9 +2773,10 @@ def get_solar_sell_price(set_entity_attr=False, get_avg_offline_sell_price=False
             if sell_price != -1.0:
                 return sell_price
             
-            location = sun.get_astral_location(hass)
-            sunrise = location[0].sunrise(getTime()).replace(tzinfo=None).hour
-            sunset = location[0].sunset(getTime()).replace(tzinfo=None).hour
+            sun_events = get_sun_events()
+            sunrise = sun_events["sunrise"].hour
+            sunset = sun_events["sunset"].hour
+                
             sell_price_list = []
             
             for hour in range(sunrise, sunset):
@@ -5828,9 +5827,10 @@ def cheap_grid_charge_hours(force_recalculate = False):
         charging_plan[day]['solar_kwh_prediction_total'] = solar_kwh_sum if charging_plan[day]['solar_kwh_prediction'] else None
         charging_plan[day]['solar_cost_prediction_avg'] = average(charging_plan[day]['solar_cost_prediction']) if charging_plan[day]['solar_cost_prediction'] else None
         
-        sunrise = location[0].sunrise(charging_plan[day]['start_of_day']).replace(tzinfo=None)
+        sun_events = get_sun_events(charging_plan[day]['start_of_day'])
+        sunrise = sun_events["sunrise"]
         sunrise_text = f"{emoji_parse({'sunrise': True})}{date_to_string(date = sunrise, format = '%H:%M')}"
-        sunset = location[0].sunset(charging_plan[day]['start_of_day']).replace(tzinfo=None)
+        sunset = sun_events["sunset"]
         sunset_text = f"{emoji_parse({'sunset': True})}{date_to_string(date = sunset, format = '%H:%M')}"
         
         solar_over_production[day] = {
@@ -7240,10 +7240,9 @@ def local_energy_prediction(powerwall_charging_timestamps = False):
         return output, output_sell
     
     try:
-        now = getTime()
-        location = sun.get_astral_location(hass)
-        sunrise = location[0].sunrise(now).replace(tzinfo=None).hour
-        sunset = location[0].sunset(now).replace(tzinfo=None).hour
+        sun_events = get_sun_events()
+        sunrise = sun_events["sunrise"].hour
+        sunset = sun_events["sunset"].hour
     except Exception as e:
         _LOGGER.error(f"Cant get sunrise/sunset: {e} {type(e)}")
         return output, output_sell
