@@ -4299,9 +4299,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
     solar_over_production = {}
     work_overview = {}
     charging_plan = {}
-    
-    location = sun.get_astral_location(hass)
-    
+        
     def kwh_available_in_hour(hour):
         nonlocal func_name
         sub_func_name = "kwh_available_in_hour"
