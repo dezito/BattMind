@@ -5142,7 +5142,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
                 total_grid_solar_kwh = new_kwh
                 total_grid_cost_prediction = new_cost
             
-            battery_kwh_cost_raw = (sum(total_grid_cost_prediction)) / sum(total_grid_solar_kwh) if sum(total_grid_solar_kwh) > 0.0 else 0.0
+            battery_kwh_cost_raw = sum(total_grid_cost_prediction) / sum(total_grid_solar_kwh) if sum(total_grid_solar_kwh) > 0.0 else 0.0
             battery_loss_cost = calc_battery_loss_cost(battery_kwh_cost_raw)
             battery_kwh_cost = battery_kwh_cost_raw + battery_loss_cost + abs(CONFIG['solar']['powerwall_wear_cost_per_kwh'])
             
