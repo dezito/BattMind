@@ -2670,6 +2670,22 @@ def get_forecast_type():
     FORECAST_TYPE = "ema"
     return "ema"
 
+def get_forecast_value(data: list = None) -> float:
+    func_name = "get_forecast_value"
+    _LOGGER = globals()['_LOGGER'].getChild(func_name)
+    
+    global FORECAST_TYPE
+    
+    calc = 0.0
+    if FORECAST_TYPE == "ema":
+        calc = round(calculate_ema(reverse_list(get_list_values(data))),2)
+    elif FORECAST_TYPE == "average":
+        calc = round(average(get_list_values(data)),2)
+    elif FORECAST_TYPE == "trend":
+        calc = round(calculate_trend(reverse_list(get_list_values(data))),2)
+        
+    return calc
+
 def cheapest_hour_fill_planner_enabled():
     if get_state(f"input_boolean.{__name__}_cheapest_hour_fill_planner") == "on":
         return True
@@ -2765,7 +2781,7 @@ def get_solar_sell_price(set_entity_attr=False, get_avg_offline_sell_price=False
             sell_price_list = []
             
             for hour in range(sunrise, sunset):
-                sell_price_list.append(average(KWH_AVG_PRICES_DB['history_sell'][hour][day_of_week]))
+                sell_price_list.append(get_forecast_value(KWH_AVG_PRICES_DB['history_sell'][hour][day_of_week]))
                 
             return average(sell_price_list)
         
@@ -2819,8 +2835,8 @@ def get_solar_sell_price(set_entity_attr=False, get_avg_offline_sell_price=False
         try:
             sell_price = float(get_state(f"input_number.{__name__}_solar_sell_fixed_price", float_type=True, error_state=CONFIG['solar']['production_price']))
             if sell_price == -1.0:
-                sell_price = average(KWH_AVG_PRICES_DB['history_sell'][getHour()][day_of_week])
-                using_text = "database average"
+                sell_price = get_forecast_value(KWH_AVG_PRICES_DB['history_sell'][getHour()][day_of_week])
+                using_text = "database forecast"
         except Exception as e:
             pass
         
@@ -2888,8 +2904,8 @@ def get_powerwall_kwh_price(kwh = None, timestamp=None): #TODO use predicted pri
                 solar_production_share = min(solar_available_production, powerwall_charging_consumption) / powerwall_charging_consumption if powerwall_charging_consumption > 0 else 0.0
                 grid_share = 1.0 - solar_production_share
                 
-                offline_price = sum(KWH_AVG_PRICES_DB['history'][hour][day_of_week]) / len(KWH_AVG_PRICES_DB['history'][hour][day_of_week])
-                offline_sell_price = sum(KWH_AVG_PRICES_DB['history_sell'][hour][day_of_week]) / len(KWH_AVG_PRICES_DB['history_sell'][hour][day_of_week])
+                offline_price = get_forecast_value(KWH_AVG_PRICES_DB['history'][hour][day_of_week])
+                offline_sell_price = get_forecast_value(KWH_AVG_PRICES_DB['history_sell'][hour][day_of_week])
                 grid_share_price = offline_price * grid_share
                 solar_share_price = offline_sell_price * solar_production_share
                 
@@ -4074,8 +4090,8 @@ def get_hour_prices(update_prices = False, sell_prices = False):
                         if timestamp in hour_prices:
                             continue
                         
-                        avg_price = average(KWH_AVG_PRICES_DB['history'][h][d])
-                        price = round(avg_price + (daysBetween(current_hour, timestamp) / price_adder_day_between_divider), 2)
+                        forecast_price = get_forecast_value(KWH_AVG_PRICES_DB['history'][h][d])
+                        price = round(forecast_price + (daysBetween(current_hour, timestamp) / price_adder_day_between_divider), 2)
                         
                         missing_hours[timestamp] = price
                         hour_prices[timestamp] = price
@@ -6990,8 +7006,7 @@ def get_solar_kwh_forecast():
                     continue
                 
                 watt = round(data['pv_estimate'] * 1000.0, 0)
-                                        
-                power_consumption_without_all_exclusion = calculate_ema(reverse_list(get_list_values(POWER_VALUES_DB[date.hour].get("power_consumption_without_all_exclusion", [0.0]))))
+                power_consumption_without_all_exclusion = get_forecast_value(POWER_VALUES_DB[date.hour].get("power_consumption_without_all_exclusion", [0.0]))
                 available = max(watt - power_consumption_without_all_exclusion, 0.0)
                 available_kwh = round(available / 1000.0, 3)
                 
@@ -7071,21 +7086,21 @@ def local_energy_prediction(powerwall_charging_timestamps = False):
         day_of_week = getDayOfWeek(date)
         
         try:
-            power_list = reverse_list(get_list_values(get_closest_key(cloudiness, SOLAR_PRODUCTION_AVAILABLE_DB[hour])))
+            power_list = get_closest_key(cloudiness, SOLAR_PRODUCTION_AVAILABLE_DB[hour])
             power_one_down_list = []
             power_one_up_list = []
             if type(power_list) == list:
-                if len(power_list) <= 6 or calculate_ema(power_list) <= 1000.0:
-                    if cloudiness >= 20:
-                        power_one_down_list = reverse_list(get_list_values(get_closest_key(cloudiness - 20, SOLAR_PRODUCTION_AVAILABLE_DB[hour])))
-                    if cloudiness <= 80:
-                        power_one_up_list = reverse_list(get_list_values(get_closest_key(cloudiness + 20, SOLAR_PRODUCTION_AVAILABLE_DB[hour])))
-                           
-                _LOGGER.debug(f"{hour} cloudiness:{cloudiness}% power_list: average({average(power_list)})/ema({calculate_ema(power_list)})={power_list}\npower_one_down: average({average(power_one_down_list)})/ema({calculate_ema(power_one_down_list)})={power_one_down_list}\npower_one_up: average({average(power_one_up_list)})/ema({calculate_ema(power_one_up_list)})={power_one_up_list}")
+                forecast_value = get_forecast_value(power_list)
                 
-                power_list = [calculate_ema(power_list)] if power_list else []
-                power_one_down_list = [calculate_ema(power_one_down_list)] if power_one_down_list else []
-                power_one_up_list = [calculate_ema(power_one_up_list)] if power_one_up_list else []
+                if len(power_list) <= 6 or forecast_value <= 1000.0:
+                    if cloudiness >= 20:
+                        power_one_down_list = get_closest_key(cloudiness - 20, SOLAR_PRODUCTION_AVAILABLE_DB[hour])
+                    if cloudiness <= 80:
+                        power_one_up_list = get_closest_key(cloudiness + 20, SOLAR_PRODUCTION_AVAILABLE_DB[hour])
+                
+                power_list = [forecast_value] if power_list else []
+                power_one_down_list = [get_forecast_value(power_one_down_list)] if power_one_down_list else []
+                power_one_up_list = [get_forecast_value(power_one_up_list)] if power_one_up_list else []
                 
                 avg_power = max(average(power_list + power_list + power_list + power_one_down_list + power_one_up_list), 0.0)
                 avg_kwh = avg_power / 1000
@@ -7093,7 +7108,7 @@ def local_energy_prediction(powerwall_charging_timestamps = False):
                 avg_sell_price = sell_price
                 
                 if avg_sell_price == -1.0:
-                    avg_sell_price = average(KWH_AVG_PRICES_DB['history_sell'][hour][day_of_week])
+                    avg_sell_price = get_forecast_value(KWH_AVG_PRICES_DB['history_sell'][hour][day_of_week])
                 
                 return [avg_kwh, avg_sell_price]
         except Exception as e:
