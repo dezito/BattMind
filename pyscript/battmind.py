@@ -5693,6 +5693,22 @@ def cheap_grid_charge_hours(force_recalculate = False):
                 else:
                     charging_plan[day]['battery_level_flow'][hour].append(CONFIG['solar']['powerwall_battery_level_min'])
 
+    diff_procent = []
+    for hour in range(48):
+        dt = current_hour - datetime.timedelta(hours=hour + 1)
+        power_consumption_without_all_exclusion = power_values(from_timestamp = dt, to_timestamp = dt + datetime.timedelta(hours=1))["power_consumption_without_all_exclusion"]
+        
+        if power_consumption_without_all_exclusion <= 0.0:
+            continue
+        
+        values = POWER_VALUES_DB[dt.hour].get("power_consumption_without_all_exclusion", [0.0])
+        forecast = get_forecast_value(values)
+        
+        diff = power_consumption_without_all_exclusion / forecast if forecast > 0.0 else 0.0
+        diff_procent.append(diff)
+    
+    correction_factor = sum(diff_procent)/len(diff_procent) if len(diff_procent) > 0 else 1.0
+        
     for day in range(amount_of_days):
         start_of_day_datetime = getTimeStartOfDay() + datetime.timedelta(days=day)
         end_of_day_datetime = getTimeEndOfDay() + datetime.timedelta(days=day)
@@ -5744,6 +5760,8 @@ def cheap_grid_charge_hours(force_recalculate = False):
             "blocked_discharge_timestamps": {},
         }
         
+        charging_plan[day]['hour_cost_prediction']['correction_factor'] = correction_factor
+        
         for hour in range(from_hour, 24):
             dt = start_of_day_datetime + datetime.timedelta(hours=hour)
             values = reverse_list(get_list_values(POWER_VALUES_DB[hour].get("power_consumption_without_all_exclusion", [0.0])))
@@ -5751,6 +5769,10 @@ def cheap_grid_charge_hours(force_recalculate = False):
             ema = calculate_ema(values) / 1000
             trend = calculate_trend(values) / 1000
             avg = average(values) / 1000
+            
+            ema *= correction_factor
+            trend *= correction_factor
+            avg *= correction_factor
             
             charging_plan[day]['hour_cost_prediction']['ema'][hour] = {
                 "percentage": kwh_to_percentage(ema),
