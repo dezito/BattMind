@@ -2675,6 +2675,11 @@ def get_forecast_value(data: list = None) -> float:
     global FORECAST_TYPE
     
     calc = 0.0
+    
+    if not data or not isinstance(data, list) or len(data) == 0:
+        _LOGGER.debug(f"Data is empty or invalid: {data}, returning 0.0")
+        return calc
+    
     if FORECAST_TYPE == "ema":
         calc = round(calculate_ema(reverse_list(get_list_values(data))),2)
     elif FORECAST_TYPE == "average":
