@@ -467,7 +467,7 @@ DEFAULT_ENTITIES = {
         f"{__name__}_exclude_sell_hours":{
             "icon":"mdi:timer-remove-outline",
             "mode": "text",
-            "pattern": '^([0-9]|1[0-9]|2[0-3])(,([0-9]|1[0-9]|2[0-3]))*$'
+            "pattern": '^(unknown|unavailable|([0-9]|1[0-9]|2[0-3])(,([0-9]|1[0-9]|2[0-3]))*)?$'
         },
     },
     "template": [
