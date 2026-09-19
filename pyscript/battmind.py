@@ -7362,18 +7362,18 @@ def current_hour_in_charge_hours():
     return False
 
 def current_hour_in_discharge_hours():
-    current_hour = reset_time_to_hour()
+    current_hour = getTime().hour
     for timestamp in CHARGING_PLAN[0]['discharge_timestamps']:
         if isinstance(timestamp, datetime.datetime):
-            if reset_time_to_hour(timestamp) == current_hour:
+            if timestamp.hour == current_hour:
                 return timestamp
     return False
 
 def current_hour_in_force_discharge_hours():
-    current_hour = reset_time_to_hour()
-    for timestamp in CHARGING_PLAN[0]['force_discharge_timestamps'].keys():
+    current_hour = getTime().hour
+    for timestamp in CHARGING_PLAN[0]['force_discharge_timestamps']:
         if isinstance(timestamp, datetime.datetime):
-            if reset_time_to_hour(timestamp) == current_hour:
+            if timestamp.hour == current_hour:
                 return timestamp
     return False
 
@@ -7427,13 +7427,11 @@ def charge_if_needed(force_recalculate = False):
                 powerwall_action = "force_discharge"
                 
                 CURRENT_SESSION_RULES.update(active_charging_rules({"force_discharge": True}))
-                emoji = emoji_parse({'error': True})
                 charging_rule = i18n.t('ui.charge_if_needed.force_discharge')
             elif discharge_hour:
                 timestamp = discharge_hour
                 powerwall_action = "discharge_allowed"
                 
-                emoji = emoji_parse({'error': True})
                 charging_rule = i18n.t('ui.charge_if_needed.discharge_allowed')
             else:
                 _LOGGER.info("No rules for charging")
