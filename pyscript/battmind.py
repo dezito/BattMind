@@ -113,6 +113,10 @@ LAST_HASH_RESULTS = {}
 LAST_SUCCESSFUL_GRID_PRICES = {
     "using_offline_prices": False
 }
+LAST_SUCCESSFUL_SELL_PRICES = {
+    "using_offline_prices": False
+}
+
 
 DAYS_TO_PREDICT = 3
 ERROR_COUNT = 0
@@ -976,6 +980,7 @@ def get_debug_info_sections():
                 "CHARGING_PLAN": CHARGING_PLAN,
                 "CHARGE_HOURS": CHARGE_HOURS,
                 "LAST_SUCCESSFUL_GRID_PRICES": LAST_SUCCESSFUL_GRID_PRICES,
+                "LAST_SUCCESSFUL_SELL_PRICES": LAST_SUCCESSFUL_SELL_PRICES,
             }),
         },
         "Charging Expenses": {
@@ -2880,8 +2885,8 @@ def get_powerwall_kwh_price(kwh = None, timestamp=None): #TODO use predicted pri
 
     if timestamp is None:
         timestamp = reset_time_to_hour()
-    prices = get_hour_prices()
-    solar_prices = get_hour_prices(sell_prices=True)
+    prices = get_grid_prices()
+    solar_prices = get_sell_prices()
     
     powerwall_kwh = []
     powerwall_total_cost = []
@@ -3706,8 +3711,8 @@ async def charging_history(timestamp=None, save_db = True):
         solar_discharge_share_pct /= discharge_normalization_factor
         powerwall_discharge_share_pct /= discharge_normalization_factor
         
-        buy_price = get_hour_prices().get(start, None)
-        sell_price = get_hour_prices(sell_prices = True).get(start, None)
+        buy_price = get_grid_prices().get(start, None)
+        sell_price = get_sell_prices().get(start, None)
         
         powerwall_kwh_price = BATTERY_LEVEL_EXPENSES.get("unit_with_loss_and_wear", None)
         
@@ -3941,12 +3946,13 @@ def update_grid_prices(initial_run = False):
     global TASKS
         
     try:
-        TASKS[f"{func_prefix}"] = task.create(get_hour_prices, update_prices = True)
-        done, pending = task.wait({TASKS[f"{func_prefix}"]})
+        TASKS[f"{func_prefix}get_grid_prices"] = task.create(get_grid_prices, update_prices = True)
+        TASKS[f"{func_prefix}get_sell_prices"] = task.create(get_sell_prices, update_prices = True)
+        done, pending = task.wait({TASKS[f"{func_prefix}get_grid_prices"], TASKS[f"{func_prefix}get_sell_prices"]})
         
         if not initial_run:
-            TASKS[f"{func_prefix}"] = task.create(append_kwh_prices)
-            done, pending = task.wait({TASKS[f"{func_prefix}"]})
+            TASKS[f"{func_prefix}append_kwh_prices"] = task.create(append_kwh_prices)
+            done, pending = task.wait({TASKS[f"{func_prefix}append_kwh_prices"]})
     except (asyncio.CancelledError, asyncio.TimeoutError, KeyError) as e:
         _LOGGER.warning(f"Task for updating grid prices was cancelled or timed out: {e} {type(e)}")
         return
@@ -3960,11 +3966,11 @@ def update_grid_prices(initial_run = False):
     finally:
         task_cancel(func_prefix, task_remove=True, startswith=True)
 
-def get_hour_prices(update_prices = False, sell_prices = False):
+def get_hour_prices(entity_id, update_prices = False, sell_prices = False):
     #TODO See development in hourly prices variation, if 15 min interval is better, than 1 hour average
     func_name = "get_hour_prices"
     _LOGGER = globals()['_LOGGER'].getChild(func_name)
-    global TASKS, LAST_SUCCESSFUL_GRID_PRICES
+    global TASKS, LAST_SUCCESSFUL_GRID_PRICES, LAST_SUCCESSFUL_SELL_PRICES
     
     now = getTime()
     current_hour = reset_time_to_hour(now)
@@ -3972,22 +3978,25 @@ def get_hour_prices(update_prices = False, sell_prices = False):
     hour_prices = {}
     price_adder_day_between_divider = 30
     
+    database = LAST_SUCCESSFUL_GRID_PRICES if not sell_prices else LAST_SUCCESSFUL_SELL_PRICES
+    local_database_type = "history" if not sell_prices else "history_sell"
+    
     try:
         all_prices_loaded = True
         
-        if CONFIG['prices']['entity_ids']['power_prices_entity_id'] not in state.names(domain="sensor"):
-            raise Exception(f"{CONFIG['prices']['entity_ids']['power_prices_entity_id']} not loaded")
+        if entity_id not in state.names(domain="sensor"):
+            raise Exception(f"{entity_id} not loaded")
         
-        power_prices_attr = get_attr(CONFIG['prices']['entity_ids']['power_prices_entity_id'], error_state={})
+        power_prices_attr = get_attr(entity_id, error_state={})
             
-        if ("prices" in LAST_SUCCESSFUL_GRID_PRICES and
-            LAST_SUCCESSFUL_GRID_PRICES['using_offline_prices'] is False and
+        if ("prices" in database and
+            database['using_offline_prices'] is False and
             update_prices is False):
-            if "update_grid_prices" in TASKS and not TASKS["update_grid_prices"].done():
-                _LOGGER.warning("Waiting for update_grid_prices to complete")
-                task_wait_until("update_grid_prices", timeout=120)
+            if f"update_{local_database_type}_prices" in TASKS and not TASKS[f"update_{local_database_type}_prices"].done():
+                _LOGGER.warning(f"Waiting for update_{local_database_type}_prices to complete")
+                task_wait_until(f"update_{local_database_type}_prices", timeout=120)
             
-            hour_prices = deepcopy(LAST_SUCCESSFUL_GRID_PRICES["prices"])
+            hour_prices = deepcopy(database["prices"])
         else:
             if "raw_today" in power_prices_attr:
                 for raw in power_prices_attr['raw_today']:
@@ -4028,7 +4037,7 @@ def get_hour_prices(update_prices = False, sell_prices = False):
             if "tomorrow_valid" in power_prices_attr:
                 if power_prices_attr['tomorrow_valid']:
                     if "raw_tomorrow" not in power_prices_attr or len(power_prices_attr['raw_tomorrow']) < 23: #Summer and winter time compensation
-                        _LOGGER.warning(f"Raw_tomorrow not in {CONFIG['prices']['entity_ids']['power_prices_entity_id']} attributes, raw_tomorrow len({len(power_prices_attr['raw_tomorrow'])})")
+                        _LOGGER.warning(f"Raw_tomorrow not in {entity_id} attributes, raw_tomorrow len({len(power_prices_attr['raw_tomorrow'])})")
                     else:
                         for raw in power_prices_attr['raw_tomorrow']:
                             hour_string = "hour" if "hour" in raw else "time"
@@ -4052,45 +4061,45 @@ def get_hour_prices(update_prices = False, sell_prices = False):
                     hour_prices[hour] = round(average(hour_prices[hour]) - get_refund(), 2)
             
             if "raw_today" not in power_prices_attr:
-                raise Exception(f"Real prices not in {CONFIG['prices']['entity_ids']['power_prices_entity_id']} attributes")
+                raise Exception(f"Real prices not in {entity_id} attributes")
             elif len(power_prices_attr['raw_today']) < 23: #Summer and winter time compensation
-                raise Exception(f"Not all real prices in {CONFIG['prices']['entity_ids']['power_prices_entity_id']} attributes, raw_today len({len(power_prices_attr['raw_today'])}) should be at least 23")
+                raise Exception(f"Not all real prices in {entity_id} attributes, raw_today len({len(power_prices_attr['raw_today'])}) should be at least 23")
 
             if "forecast" not in power_prices_attr:
-                raise Exception(f"Forecast not in {CONFIG['prices']['entity_ids']['power_prices_entity_id']} attributes")
+                raise Exception(f"Forecast not in {entity_id} attributes")
             elif len(power_prices_attr['forecast']) < 100: #Full forecast length is 142
-                raise Exception(f"Not all forecast prices in {CONFIG['prices']['entity_ids']['power_prices_entity_id']} attributes, forecast len({len(power_prices_attr['forecast'])}) should be at least 100")
+                raise Exception(f"Not all forecast prices in {entity_id} attributes, forecast len({len(power_prices_attr['forecast'])}) should be at least 100")
 
             if not all_prices_loaded:
-                raise Exception(f"Not all prices loaded in {CONFIG['prices']['entity_ids']['power_prices_entity_id']} attributes")
+                raise Exception(f"Not all prices loaded in {entity_id} attributes")
             else:
-                LAST_SUCCESSFUL_GRID_PRICES.pop("missing_hours", None)
+                database.pop("missing_hours", None)
                 
-                LAST_SUCCESSFUL_GRID_PRICES["last_update"] = getTime()
-                LAST_SUCCESSFUL_GRID_PRICES["prices"] = hour_prices
-                LAST_SUCCESSFUL_GRID_PRICES['using_offline_prices'] = False
+                database["last_update"] = getTime()
+                database["prices"] = hour_prices
+                database['using_offline_prices'] = False
     except Exception as e:
-        if "last_update" in LAST_SUCCESSFUL_GRID_PRICES and minutesBetween(LAST_SUCCESSFUL_GRID_PRICES["last_update"], now) <= 120:
-            hour_prices = deepcopy(LAST_SUCCESSFUL_GRID_PRICES["prices"])
-            _LOGGER.warning(f"Not all prices loaded in {CONFIG['prices']['entity_ids']['power_prices_entity_id']} attributes, using last successful")
+        if "last_update" in database and minutesBetween(database["last_update"], now) <= 120:
+            hour_prices = deepcopy(database["prices"])
+            _LOGGER.warning(f"Not all prices loaded in {entity_id} attributes, using last successful")
         else:
-            _LOGGER.warning(f"Cant get all online prices, using database: {e} {type(e)}")
+            _LOGGER.warning(f"Cant get all online {'sell' if sell_prices else 'grid'} prices for {entity_id}, using database: {e} {type(e)}")
 
-            LAST_SUCCESSFUL_GRID_PRICES["last_update"] = getTime()
-            LAST_SUCCESSFUL_GRID_PRICES["prices"] = hour_prices
-            LAST_SUCCESSFUL_GRID_PRICES['using_offline_prices'] = True
+            database["last_update"] = getTime()
+            database["prices"] = hour_prices
+            database['using_offline_prices'] = True
             
             missing_hours = {}
             try:
                 if len(KWH_AVG_PRICES_DB) == 0:
                     load_kwh_prices()
                     
-                if "history" not in KWH_AVG_PRICES_DB:
-                    raise Exception(f"Missing history in KWH_AVG_PRICES_DB")
+                if local_database_type not in KWH_AVG_PRICES_DB:
+                    raise Exception(f"Missing {local_database_type} in KWH_AVG_PRICES_DB")
                 
                 for h in range(24):
                     for d in range(7):
-                        if d not in KWH_AVG_PRICES_DB['history'][h]:
+                        if d not in KWH_AVG_PRICES_DB[local_database_type][h]:
                             raise Exception(f"Missing hour {h} and day of week {d} in KWH_AVG_PRICES_DB")
 
                         timestamp = reset_time_to_hour(current_hour.replace(hour=h)) + datetime.timedelta(days=d)
@@ -4099,7 +4108,7 @@ def get_hour_prices(update_prices = False, sell_prices = False):
                         if timestamp in hour_prices:
                             continue
                         
-                        forecast_price = get_forecast_value(KWH_AVG_PRICES_DB['history'][h][d])
+                        forecast_price = get_forecast_value(KWH_AVG_PRICES_DB[local_database_type][h][d])
                         price = round(forecast_price + (daysBetween(current_hour, timestamp) / price_adder_day_between_divider), 2)
                         
                         missing_hours[timestamp] = price
@@ -4109,7 +4118,7 @@ def get_hour_prices(update_prices = False, sell_prices = False):
                     missing_hours = dict(sorted(missing_hours.items()))
                     _LOGGER.debug(f"Using following offline prices: {missing_hours}")
                     
-                    LAST_SUCCESSFUL_GRID_PRICES["missing_hours"] = missing_hours
+                    database["missing_hours"] = missing_hours
                     
             except Exception as ex:
                 error_message = f"Cant get offline prices: {ex} {type(ex)}"
@@ -4137,6 +4146,12 @@ def get_hour_prices(update_prices = False, sell_prices = False):
             hour_prices[timestamp] = round(raw_price + sell_tariffs, 2)
     
     return hour_prices
+
+def get_grid_prices(update_prices = False):
+    return get_hour_prices(CONFIG['prices']['entity_ids']['power_prices_entity_id'], update_prices=update_prices)
+
+def get_sell_prices(update_prices = False):
+    return get_hour_prices(CONFIG['prices']['entity_ids']['power_prices_entity_id'], update_prices=update_prices, sell_prices=True)
 
 def find_nth_local_min(
     price_dict: dict[datetime.datetime, float],
@@ -4291,8 +4306,8 @@ def cheap_grid_charge_hours(force_recalculate = False):
     
     amount_of_days = DAYS_TO_PREDICT
     
-    grid_prices = deepcopy(get_hour_prices())
-    grid_sell_prices = deepcopy(get_hour_prices(sell_prices=True))
+    grid_prices = deepcopy(get_grid_prices())
+    grid_sell_prices = deepcopy(get_sell_prices())
     sorted_by_cheapest_price = sorted(grid_prices.items(), key=lambda kv: (kv[1], kv[0]))
     energy_prediction_db = deepcopy(LOCAL_ENERGY_PREDICTION_DB)
     
@@ -7067,7 +7082,7 @@ def get_solar_kwh_forecast():
     
     forecast = {}
     
-    hour_prices = get_hour_prices()
+    hour_prices = get_sell_prices()
                         
     energinets_network_tariff = SOLAR_SELL_TARIFF["energinets_network_tariff"]
     energinets_balance_tariff = SOLAR_SELL_TARIFF["energinets_balance_tariff"]
