@@ -137,6 +137,7 @@ POWER_VALUES_DB_VERSION = 1.0
 SOLAR_PRODUCTION_AVAILABLE_DB = {}
 SOLAR_PRODUCTION_AVAILABLE_DB_VERSION = 2.0
 
+CHARGING_HISTORY_COMBINE_AFTER = 24 * 3
 CHARGING_HISTORY_ENDING_BYTE_SIZE = None
 CHARGING_HISTORY_DB = {}
 CHARGING_HISTORY_DB_TOTAL = {}
@@ -3057,9 +3058,7 @@ def save_charging_history():
 def charging_history_combine_and_set(get_ending_byte_size: bool = False):
     func_name = "charging_history_combine_and_set"
     _LOGGER = globals()["_LOGGER"].getChild(func_name)
-    global CHARGING_HISTORY_DB, CHARGING_HISTORY_ENDING_BYTE_SIZE, CHARGING_HISTORY_DB_TOTAL
-
-    combine_after = 10  # start combining only AFTER this many newest blocks
+    global CHARGING_HISTORY_DB, CHARGING_HISTORY_ENDING_BYTE_SIZE, CHARGING_HISTORY_DB_TOTAL, CHARGING_HISTORY_COMBINE_AFTER
     
     history = []
     combined_db = {}
@@ -3195,7 +3194,7 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
         """
         Your wish: when we DO combine, do it per-day => one row per day.
         We still keep your 'recent = hourly' behavior if not yet combining.
-        But once combined_block_counter >= combine_after, we want daily buckets.
+        But once combined_block_counter >= CHARGING_HISTORY_COMBINE_AFTER, we want daily buckets.
         """
         try:
             return daysBetween(base_when, next_when) == 0
@@ -3228,7 +3227,7 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
             "discharge_price": [],
         }
 
-        if combined_block_counter >= combine_after:
+        if combined_block_counter >= CHARGING_HISTORY_COMBINE_AFTER:
             j = idx + 1
             while j < sorted_db_len:
                 next_when, next_session = sorted_db[j]
@@ -3393,7 +3392,7 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
                 add_header = False
                 history_loop_append([header, align])
 
-            if combined_block_counter > combine_after:
+            if combined_block_counter > CHARGING_HISTORY_COMBINE_AFTER:
                 time_str = f"**{started.strftime('%d/%m')}**"
             else:
                 time_str = f"**{started.strftime('%d/%m %H:%M')}**"
@@ -3428,7 +3427,7 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
             buy_price = used_prices.get("buy_price", None)
             charge_price_unit = (c_cost / c_kwh) if c_kwh > 0 else None
             charge_price_lines = []
-            if combined_block_counter < combine_after and d_kwh > 0.0 and buy_price is not None:
+            if combined_block_counter < CHARGING_HISTORY_COMBINE_AFTER and d_kwh > 0.0 and buy_price is not None:
                 buy_price_str = f"🔌{_fmt(buy_price * d_kwh,2,'0.00')}<br>({_fmt(buy_price,2,'')})"
                 charge_price_lines.append(_buy_color(buy_price_str))
             if c_kwh > 0.0:
@@ -3443,7 +3442,7 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
             sav_lines = []
             if savings_num != 0.0:
                 sav_lines.append(f"{_fmt(savings_num,2,'0.00')}")
-                if combined_block_counter < combine_after and d_kwh > 0.0 and buy_price is not None:
+                if combined_block_counter < CHARGING_HISTORY_COMBINE_AFTER and d_kwh > 0.0 and buy_price is not None:
                     sav_lines.append(f"({_fmt(buy_price - discharge_price_unit,2,'0.00')})")
             sav_str = "<br>".join(sav_lines) if round(savings_num, 2) != 0.0 else ""
 
