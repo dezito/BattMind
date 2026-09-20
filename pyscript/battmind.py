@@ -2808,7 +2808,7 @@ def get_solar_sell_price(set_entity_attr=False, get_avg_offline_sell_price=False
         solar_production_seller_cut = SOLAR_SELL_TARIFF["solar_production_seller_cut"]
         
         sell_tariffs = sum((solar_production_seller_cut, energinets_network_tariff, energinets_balance_tariff, transmissions_nettarif, systemtarif))
-        solar_sell_price = raw_price - sell_tariffs
+        solar_sell_price = raw_price + sell_tariffs
         
         if sell_price == -1.0:
             sell_price = round(solar_sell_price, 3)
@@ -4135,7 +4135,7 @@ def get_hour_prices(update_prices = False, sell_prices = False):
             solar_production_seller_cut = SOLAR_SELL_TARIFF["solar_production_seller_cut"]
             
             sell_tariffs = sum((solar_production_seller_cut, energinets_network_tariff, energinets_balance_tariff, transmissions_nettarif, systemtarif))
-            hour_prices[timestamp] = raw_price - sell_tariffs
+            hour_prices[timestamp] = round(raw_price + sell_tariffs, 2)
     
     return hour_prices
 
@@ -7051,7 +7051,7 @@ def get_solar_kwh_forecast():
                 raw_price = price - tariff_sum
                 
                 sell_tariffs = sum((solar_production_seller_cut, energinets_network_tariff, energinets_balance_tariff, transmissions_nettarif, systemtarif))
-                sell_price = raw_price - sell_tariffs
+                sell_price = raw_price + sell_tariffs
                 
                 forecast[date] = (available_kwh, sell_price)
         except Exception as e:
@@ -7720,7 +7720,7 @@ def append_kwh_prices():
                 solar_production_seller_cut = SOLAR_SELL_TARIFF["solar_production_seller_cut"]
                 
                 sell_tariffs = sum((solar_production_seller_cut, energinets_network_tariff, energinets_balance_tariff, transmissions_nettarif, systemtarif))
-                sell_price = raw_price - sell_tariffs
+                sell_price = raw_price + sell_tariffs
                     
                 sell_price = round(sell_price, 3)
                 KWH_AVG_PRICES_DB['history_sell'][h][day_of_week].insert(0, sell_price)
