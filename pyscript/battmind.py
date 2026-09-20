@@ -4116,7 +4116,7 @@ def get_hour_prices(update_prices = False, sell_prices = False):
                 error_message = f"Cant get offline prices: {ex} {type(ex)}"
                 _LOGGER.error(error_message)
                 save_error_to_file(error_message, caller_function_name = f"{func_name}()")
-                my_persistent_notification(f"Kan ikke hente offline priser: {ex} {type(ex)}", f"{TITLE} error", persistent_notification_id=f"{__name__}_{func_name}_offline_prices_error")
+                my_persistent_notification(f"Cant get offline prices: {ex} {type(ex)}", f"{TITLE} error", persistent_notification_id=f"{__name__}_{func_name}_offline_prices_error")
                 raise Exception(f"Offline prices error: {ex} {type(ex)}")
     
     if sell_prices:
@@ -5712,7 +5712,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
         
         diff = power_consumption_without_all_exclusion / forecast if forecast > 0.0 else 0.0
         diff_procent.append(diff)
-    
+        
     correction_factor = sum(diff_procent)/len(diff_procent) if len(diff_procent) > 0 else 1.0
         
     for day in range(amount_of_days):
