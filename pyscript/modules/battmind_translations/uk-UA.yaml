@@ -365,7 +365,7 @@ ui:
     discharge_allowed: "Розряджання дозволено"
     force_discharge: "Примусове розряджання"
     charging_watt: "Заряджання {watt}W"
-    discharge_watt: "Розряджання {watt}W"
+    discharging_watt: "Розряджання {watt}W"
 
   startup:
     configuration:
