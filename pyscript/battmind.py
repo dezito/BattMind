@@ -163,12 +163,6 @@ LOCAL_ENERGY_PREDICTION_DB = {
     "solar_prediction_timestamps": {},
 }
 
-SOLAR_SELL_TARIFF = {
-    "energinets_network_tariff": 0.0030,
-    "energinets_balance_tariff": 0.0024,
-    "solar_production_seller_cut": 0.01
-}
-
 INTEGRATION_OFFLINE_TIMESTAMP = {}
 
 WEATHER_CONDITION_DICT = {
@@ -577,6 +571,7 @@ class BasePriceProvider:
         self.entity_ids = prices_config.get("entity_ids", {})
         self.refund = abs(prices_config.get("refund", 0.0))
         self.sell_fee = abs(prices_config.get("sell_fee", 0.0))
+        self.sell_configured = False
 
     def normalize_timestamp(self, timestamp):
         if isinstance(timestamp, datetime.datetime):
@@ -650,9 +645,7 @@ class BasePriceProvider:
         raw_price = price - tariff_dict["tariff_sum"] if not self.sell_configured else price
 
         sell_tariffs = sum((
-            SOLAR_SELL_TARIFF["solar_production_seller_cut"],
-            SOLAR_SELL_TARIFF["energinets_network_tariff"],
-            SOLAR_SELL_TARIFF["energinets_balance_tariff"],
+            self.sell_fee,
             tariff_dict["transmissions_nettarif"],
             tariff_dict["systemtarif"],
         ))
@@ -861,13 +854,14 @@ class EnergiDataServicePriceProvider(BasePriceProvider):
         tariffs = tariff_dict["tariffs"]
         tariff_sum = tariff_dict["tariff_sum"]
 
-        raw_price = price - tariff_sum if not self.sell_configured else price
+        raw_price = price if self.sell_configured else price - tariff_sum
 
-        energinets_network_tariff = SOLAR_SELL_TARIFF["energinets_network_tariff"]
-        energinets_balance_tariff = SOLAR_SELL_TARIFF["energinets_balance_tariff"]
-        solar_production_seller_cut = SOLAR_SELL_TARIFF["solar_production_seller_cut"]
+        sell_tariffs = sum((
+            PRICE_PROVIDER.sell_fee,
+            transmissions_nettarif,
+            systemtarif
+        ))
 
-        sell_tariffs = sum((solar_production_seller_cut, energinets_network_tariff, energinets_balance_tariff, transmissions_nettarif, systemtarif))
         sell_price = raw_price + sell_tariffs
 
         return {
@@ -883,9 +877,6 @@ class EnergiDataServicePriceProvider(BasePriceProvider):
                 "raw_price": raw_price,
                 "transmissions_nettarif_": transmissions_nettarif,
                 "systemtarif_": systemtarif,
-                "energinets_network_tariff_": energinets_network_tariff,
-                "energinets_balance_tariff_": energinets_balance_tariff,
-                "solar_production_seller_cut_": solar_production_seller_cut,
                 "sell_tariffs": sell_tariffs,
                 "solar_sell_price": sell_price,
             },
@@ -944,13 +935,20 @@ class EnergiDataServicePriceProvider(BasePriceProvider):
         _LOGGER = globals()['_LOGGER'].getChild(func_name)
 
         try:
-            if self.buy_entity_id not in state.names(domain="sensor"):
-                raise Exception(f"{self.buy_entity_id} not loaded")
+            if self.sell_entity_id not in state.names(domain="sensor"):
+                raise Exception(f"{self.sell_entity_id} not loaded")
 
-            power_prices_attr = get_attr(self.buy_entity_id, error_state={})
+            power_prices_attr = get_attr(self.sell_entity_id, error_state={})
 
             if "tariffs" not in power_prices_attr:
-                raise Exception(f"tariffs not in {self.buy_entity_id}")
+                return {
+                    "transmissions_nettarif": 0.0,
+                    "systemtarif": 0.0,
+                    "elafgift": 0.0,
+                    "tariffs": 0.0,
+                    "surcharge": 0.0,
+                    "tariff_sum": 0.0
+                }
 
             attr = power_prices_attr["tariffs"]
             transmissions_nettarif = attr["additional_tariffs"]["transmissions_nettarif"]
@@ -1692,10 +1690,6 @@ def get_debug_info_sections():
                 "TASKS_COUNT": len(TASKS) if TASKS else 0,
             }),
             "details": format_debug_details({"TASKS": TASKS}),
-        },
-        "Tariff Settings": {
-            "table": None,
-            "details": format_debug_details({"SOLAR_SELL_TARIFF": SOLAR_SELL_TARIFF}),
         },
         "Current Session Rules": {
             "table": None,
@@ -7617,17 +7611,9 @@ def get_solar_kwh_forecast():
                 available = max(watt - power_consumption_without_all_exclusion, 0.0)
                 available_kwh = round(available / 1000.0, 3)
                 
-                day_of_week = getDayOfWeek(date)
-                tariff_dict = PRICE_PROVIDER.get_tariffs(date.hour, day_of_week, timestamp=date)
-                transmissions_nettarif = tariff_dict["transmissions_nettarif"]
-                systemtarif = tariff_dict["systemtarif"]
-                tariff_sum = tariff_dict["tariff_sum"]
-                
                 price = hour_prices[date]
-                raw_price = price - tariff_sum
                 
-                sell_tariffs = sum((solar_production_seller_cut, energinets_network_tariff, energinets_balance_tariff, transmissions_nettarif, systemtarif))
-                sell_price = raw_price + sell_tariffs
+                sell_price = PRICE_PROVIDER.calculate_sell_price(date, price)
                 
                 forecast[date] = (available_kwh, sell_price)
         except Exception as e:
@@ -7645,10 +7631,6 @@ def get_solar_kwh_forecast():
     forecast = {}
     
     hour_prices = get_sell_prices()
-                        
-    energinets_network_tariff = SOLAR_SELL_TARIFF["energinets_network_tariff"]
-    energinets_balance_tariff = SOLAR_SELL_TARIFF["energinets_balance_tariff"]
-    solar_production_seller_cut = SOLAR_SELL_TARIFF["solar_production_seller_cut"]
     
     integration = get_integration(CONFIG['solar']['entity_ids']['forecast_entity_id'])
     
