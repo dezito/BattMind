@@ -5683,12 +5683,12 @@ def cheap_grid_charge_hours(force_recalculate = False):
             _LOGGER.debug(f"Discharge amount day:{day} discharge_kwh:{discharge_kwh}kWh")
             charging_plan[day]['discharge_kwh'] = discharge_kwh
         
-        def _get_predicted_battery_cost(day, predicted_battery_level=None):
+        def _get_predicted_battery_cost(day, hour=None, predicted_battery_level=None):
             nonlocal func_name, sub_func_name
             sub_sub_func_name = "get_predicted_battery_cost"
             _LOGGER = globals()['_LOGGER'].getChild(f"{func_name}.{sub_func_name}.{sub_sub_func_name}")
             
-            nonlocal charging_plan, grid_prices, battery_expenses
+            nonlocal charging_plan, battery_expenses
             
             total_grid_solar_kwh = []
             total_grid_cost_prediction = []
@@ -5697,49 +5697,37 @@ def cheap_grid_charge_hours(force_recalculate = False):
             
             if battery_level is None:
                 battery_level = get_battery_level() if day == 0 else sum(charging_plan[day]['battery_level_end_of_day'])
+            
+            if hour is None:
+                hour = 23
                 
-            powerwall_kwh = percentage_to_kwh(battery_level, include_charging_loss=True)
+            powerwall_kwh = [percentage_to_kwh(battery_level, include_charging_loss=True)]
             powerwall_kwh_price = battery_expenses.get("unit", None)
             
-            if not isinstance(powerwall_kwh_price, (int, float)):
-                powerwall_kwh_price = get_powerwall_kwh_price()
+            solar_index = len(charging_plan[day]['solar_kwh_prediction'])
+            min_battery_level = percentage_to_kwh(CONFIG['solar']['powerwall_battery_level_min'], include_charging_loss=True)
             
-            total_grid_solar_kwh.append(powerwall_kwh)
-            total_grid_cost_prediction.append(powerwall_kwh_price * powerwall_kwh)
-            
-            for hour in range(current_hour.hour, 24):
-                timestamp = current_hour.replace(hour=hour) + datetime.timedelta(days=day)
-                if hour in charging_plan[day]['solar_kwh_prediction']:
-                    if charging_plan[day]['solar_kwh_prediction'][hour] > 0.0:
-                        total_grid_solar_kwh.append(charging_plan[day]['solar_kwh_prediction'][hour])
-                        total_grid_cost_prediction.append(charging_plan[day]['solar_cost_prediction'][hour])
+            for h in range(0, hour + 1):
+                timestamp = current_hour.replace(hour=h) + datetime.timedelta(days=day)
+                if h < solar_index and charging_plan[day]['solar_kwh_prediction'][h] > 0.0:
+                    after_solar_added = sum(powerwall_kwh) - charging_plan[day]['solar_kwh_prediction'][h]
+                    if after_solar_added >= min_battery_level:
+                        powerwall_kwh.append(charging_plan[day]['solar_kwh_prediction'][h] * -1)
+                        battery_level -= kwh_to_percentage(charging_plan[day]['solar_kwh_prediction'][h], include_charging_loss=True)
+                        
+                        total_grid_solar_kwh.append(charging_plan[day]['solar_kwh_prediction'][h])
+                        total_grid_cost_prediction.append(charging_plan[day]['solar_cost_prediction'][h])
                     
                 if timestamp in charging_plan[day]['charging_sessions']:
                     charging_session = charging_plan[day]['charging_sessions'][timestamp]
                     total_grid_solar_kwh.append(charging_session['kWh'])
                     total_grid_cost_prediction.append(charging_session['Cost'])
             
-            if predicted_battery_level:
-                predicted_kwh = percentage_to_kwh(predicted_battery_level, include_charging_loss=True)
-                new_kwh = []
-                new_cost = []
-
-                for kwh, cost in zip(total_grid_solar_kwh, total_grid_cost_prediction):
-                    if predicted_kwh <= 0:
-                        break
-
-                    if kwh <= predicted_kwh:
-                        new_kwh.append(kwh)
-                        new_cost.append(cost)
-                        predicted_kwh -= kwh
-                    else:
-                        factor = predicted_kwh / kwh
-                        new_kwh.append(predicted_kwh)
-                        new_cost.append(cost * factor)
-                        predicted_kwh = 0
-
-                total_grid_solar_kwh = new_kwh
-                total_grid_cost_prediction = new_cost
+            if not isinstance(powerwall_kwh_price, (int, float)):
+                powerwall_kwh_price = get_powerwall_kwh_price()
+            
+            total_grid_solar_kwh.append(sum(powerwall_kwh))
+            total_grid_cost_prediction.append(powerwall_kwh_price * sum(powerwall_kwh))
             
             battery_kwh_cost_raw = sum(total_grid_cost_prediction) / sum(total_grid_solar_kwh) if sum(total_grid_solar_kwh) > 0.0 else 0.0
             battery_loss_cost = calc_battery_loss_cost(battery_kwh_cost_raw)
@@ -5773,7 +5761,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
                     continue
                 
                 battery_level = charging_plan[day]['battery_level_flow'].get(hour, None)
-                battery_kwh_cost_raw, battery_loss_cost, battery_kwh_cost = _get_predicted_battery_cost(day, predicted_battery_level = sum(battery_level) if battery_level is not None else None)
+                battery_kwh_cost_raw, battery_loss_cost, battery_kwh_cost = _get_predicted_battery_cost(day, hour, predicted_battery_level = sum(battery_level) if battery_level is not None else None)
                 min_profit_per_kwh = get_min_profit_per_kwh()
                 profit = price - battery_kwh_cost
                 
@@ -5924,7 +5912,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
                 what_day = daysBetween(charging_plan[0]['start_of_day'], timestamp)
                 hour = timestamp.hour
                 
-                _, _, battery_kwh_cost = _get_predicted_battery_cost(what_day, predicted_battery_level = charging_plan[what_day]['hour_cost_prediction'][FORECAST_TYPE][hour]['percentage'])
+                _, _, battery_kwh_cost = _get_predicted_battery_cost(what_day, hour, predicted_battery_level = charging_plan[what_day]['hour_cost_prediction'][FORECAST_TYPE][hour]['percentage'])
                 
                 grid_price = grid_prices.get(timestamp, None)
                 
@@ -5960,7 +5948,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
                 if kwh < min_sell_kwh:
                     continue
                 
-                battery_kwh_cost_raw, battery_loss_cost, battery_kwh_cost = _get_predicted_battery_cost(what_day, predicted_battery_level = battery_level)
+                battery_kwh_cost_raw, battery_loss_cost, battery_kwh_cost = _get_predicted_battery_cost(what_day, hour, predicted_battery_level = battery_level)
                 
                 grid_sell_price = grid_sell_prices_for_day[timestamp]
                 
@@ -6096,7 +6084,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
                         continue
                     
                     battery_level = charging_plan[what_day]['battery_level_flow'].get(timestamp.hour, None)
-                    loop_battery_kwh_cost_raw, loop_battery_loss_cost, loop_battery_kwh_cost = _get_predicted_battery_cost(day, predicted_battery_level = sum(battery_level) if battery_level is not None else None)
+                    loop_battery_kwh_cost_raw, loop_battery_loss_cost, loop_battery_kwh_cost = _get_predicted_battery_cost(day, timestamp.hour, predicted_battery_level = sum(battery_level) if battery_level is not None else None)
                     
                     excess_kwh_available_current_hour = min(excess_kwh_available, abs(MAX_KWH_DISCHARGING))
                     
