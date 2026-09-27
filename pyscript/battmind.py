@@ -5900,7 +5900,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
             hours = hoursBetween(current_hour, lowest_timestamp)
             exclude_hours = get_exclude_sell_hours()
             min_profit_per_kwh = get_min_profit_per_kwh()
-            _LOGGER.info(f"day:{day} hoursBetween({current_hour}, {lowest_timestamp}) = {hours} exclude_hours:{exclude_hours} min_profit_per_kwh:{min_profit_per_kwh}")
+            
             for i in range(hours + 1):
                 timestamp = current_hour + datetime.timedelta(hours=i)
                 what_day = daysBetween(charging_plan[0]['start_of_day'], timestamp)
@@ -5919,8 +5919,6 @@ def cheap_grid_charge_hours(force_recalculate = False):
                 
                 powerwall_usage_profit = round(powerwall_usage_profit, 2)
                 powerwall_usage_profit_total.append(powerwall_usage_profit)
-            
-            _LOGGER.info(f"day:{day} powerwall_usage_profit_total:{powerwall_usage_profit_total} = {sum(powerwall_usage_profit_total)}")
             
             for i in range(hours + 1):
                 timestamp = current_hour + datetime.timedelta(hours=i)
@@ -5956,9 +5954,6 @@ def cheap_grid_charge_hours(force_recalculate = False):
                 sell_profit = grid_sell_profit - sum(powerwall_usage_profit_total)
                 
                 min_sell_profit = min_profit_per_kwh * kwh
-                
-                if sell_profit > 0.0:
-                    _LOGGER.error(f"day:{day} hour:{hour} timestamp:{timestamp} grid_sell_profit:{grid_sell_profit} powerwall_usage_profit_total:{sum(powerwall_usage_profit_total)} sell_profit:{sell_profit} min_sell_profit:{min_sell_profit}")
                 
                 if sell_profit > min_sell_profit:
                     diff = grid_sell_profit - sum(powerwall_usage_profit_total)
