@@ -556,7 +556,6 @@ class PriceProvider:
 
         provider = CombinedPriceProvider()
         provider.setup(config, providers)
-
         return provider
 
 class BasePriceProvider:
@@ -572,6 +571,12 @@ class BasePriceProvider:
         self.refund = abs(prices_config.get("refund", 0.0))
         self.sell_fee = abs(prices_config.get("sell_fee", 0.0))
         self.sell_configured = False
+
+        self.buy_real_prices = {}
+        self.buy_forecast_prices = {}
+        self.sell_real_prices = {}
+        self.sell_forecast_prices = {}
+        self.sell_price_details = {}
 
     def normalize_timestamp(self, timestamp):
         if isinstance(timestamp, datetime.datetime):
@@ -602,38 +607,82 @@ class BasePriceProvider:
             "price": prices[price_timestamp]
         }
 
+    def update_prices(self):
+        self.sell_price_details = {}
+
+        self.buy_real_prices = self._load_buy_real_prices()
+        self.buy_forecast_prices = self._load_buy_forecast_prices()
+        self.sell_real_prices = self._load_sell_real_prices()
+        self.sell_forecast_prices = self._load_sell_forecast_prices()
+
     def get_buy_real_prices(self):
-        raise NotImplementedError
+        return self.buy_real_prices
 
     def get_buy_forecast_prices(self):
-        return {}
+        return self.buy_forecast_prices
 
     def get_sell_real_prices(self):
-        raise NotImplementedError
+        return self.sell_real_prices
 
     def get_sell_forecast_prices(self):
-        return {}
+        return self.sell_forecast_prices
 
     def get_buy_prices(self):
-        prices = self.get_buy_real_prices()
+        prices = self.buy_real_prices.copy()
 
-        for timestamp, price in self.get_buy_forecast_prices().items():
+        for timestamp, price in self.buy_forecast_prices.items():
             if timestamp not in prices:
                 prices[timestamp] = price
 
         return dict(sorted(prices.items()))
 
     def get_sell_prices(self):
-        prices = self.get_sell_real_prices()
+        prices = self.sell_real_prices.copy()
 
-        for timestamp, price in self.get_sell_forecast_prices().items():
+        for timestamp, price in self.sell_forecast_prices.items():
             if timestamp not in prices:
                 prices[timestamp] = price
 
         return dict(sorted(prices.items()))
 
-    def get_sell_price(self, timestamp=None):
+    def _load_buy_real_prices(self):
         raise NotImplementedError
+
+    def _load_buy_forecast_prices(self):
+        return {}
+
+    def _load_sell_real_prices(self):
+        raise NotImplementedError
+
+    def _load_sell_forecast_prices(self):
+        return {}
+
+    def get_sell_price(self, timestamp=None):
+        if timestamp is None:
+            timestamp = getTime()
+
+        timestamp = self.normalize_timestamp(timestamp)
+        result = self.get_price_at_timestamp(self.get_sell_prices(), timestamp)
+
+        if result is None:
+            raise Exception(f"No sell price available for {timestamp}")
+
+        price_timestamp = result["price_timestamp"]
+        details = self.sell_price_details.get(price_timestamp)
+
+        if details is None:
+            return {
+                "price": result["price"],
+                "details": {
+                    "price_timestamp": price_timestamp,
+                    "solar_sell_price": result["price"]
+                }
+            }
+
+        return {
+            "price": result["price"],
+            "details": details.copy()
+        }
 
     def get_tariffs(self, hour, day_of_week, timestamp=None):
         raise NotImplementedError
@@ -642,15 +691,55 @@ class BasePriceProvider:
         timestamp = self.normalize_timestamp(timestamp)
         day_of_week = getDayOfWeek(timestamp)
         tariff_dict = self.get_tariffs(timestamp.hour, day_of_week, timestamp=timestamp)
-        raw_price = price - tariff_dict["tariff_sum"] if not self.sell_configured else price
+
+        transmissions_nettarif = tariff_dict["transmissions_nettarif"]
+        systemtarif = tariff_dict["systemtarif"]
+        elafgift = tariff_dict["elafgift"]
+        tariffs = tariff_dict["tariffs"]
+        surcharge = tariff_dict["surcharge"]
+        tariff_sum = tariff_dict["tariff_sum"]
+
+        raw_price = price - tariff_sum
 
         sell_tariffs = sum((
             self.sell_fee,
-            tariff_dict["transmissions_nettarif"],
-            tariff_dict["systemtarif"],
+            transmissions_nettarif,
+            systemtarif
         ))
 
-        return round(raw_price + sell_tariffs, 2)
+        sell_price = round(raw_price + sell_tariffs, 2)
+
+        self.sell_price_details[timestamp] = {
+            "price": price,
+            "price_timestamp": timestamp,
+            "transmissions_nettarif": transmissions_nettarif,
+            "systemtarif": systemtarif,
+            "elafgift": elafgift,
+            "tariffs": tariffs,
+            "surcharge": surcharge,
+            "tariff_sum": tariff_sum,
+            "raw_price": raw_price,
+            "sell_fee": self.sell_fee,
+            "sell_tariffs": sell_tariffs,
+            "solar_sell_price": sell_price
+        }
+
+        return sell_price
+
+    def _get_periods_in_hour(self, prices, timestamp):
+        timestamp = self.normalize_timestamp(timestamp)
+        hour_start = timestamp.replace(minute=0, second=0, microsecond=0)
+        hour_end = hour_start + datetime.timedelta(hours=1)
+
+        periods = 0
+
+        for price_timestamp in prices:
+            price_timestamp = self.normalize_timestamp(price_timestamp)
+
+            if hour_start <= price_timestamp < hour_end:
+                periods += 1
+
+        return periods
 
 class CombinedPriceProvider(BasePriceProvider):
     func_name = "CombinedPriceProvider"
@@ -659,23 +748,50 @@ class CombinedPriceProvider(BasePriceProvider):
 
     def setup(self, config, providers):
         BasePriceProvider.setup(self, config)
+
         self.providers = providers
+        self.buy_prices = {}
+        self.sell_prices = {}
+        self.buy_real_prices = {}
+        self.sell_real_prices = {}
         self.buy_price_sources = {}
         self.sell_price_sources = {}
+        self.sell_price_details = {}
+        self.last_update = None
 
-    def get_buy_prices(self):
-        prices, sources = self._get_combined_prices("get_buy_real_prices", "get_buy_forecast_prices")
-        self.buy_price_sources = sources
-        return prices
+    def update_prices(self):
+        for provider in self.providers:
+            try:
+                provider.update_prices()
+            except Exception as e:
+                self._LOGGER.warning(f"Can't update prices from {provider.func_name}: {e} {type(e)}")
 
-    def get_sell_prices(self):
-        prices, sources = self._get_combined_prices("get_sell_real_prices", "get_sell_forecast_prices")
-        self.sell_price_sources = sources
-        return prices
+        buy_prices, buy_real_prices, buy_sources, _ = self._get_combined_prices(
+            "get_buy_real_prices",
+            "get_buy_forecast_prices",
+            sell_prices=False
+        )
 
-    def _get_combined_prices(self, real_method, forecast_method):
+        sell_prices, sell_real_prices, sell_sources, sell_price_details = self._get_combined_prices(
+            "get_sell_real_prices",
+            "get_sell_forecast_prices",
+            sell_prices=True
+        )
+
+        self.buy_prices = buy_prices
+        self.sell_prices = sell_prices
+        self.buy_real_prices = buy_real_prices
+        self.sell_real_prices = sell_real_prices
+        self.buy_price_sources = buy_sources
+        self.sell_price_sources = sell_sources
+        self.sell_price_details = sell_price_details
+        self.last_update = getTime()
+
+    def _get_combined_prices(self, real_method, forecast_method, sell_prices=False):
         prices = {}
+        real_prices = {}
         sources = {}
+        details = {}
 
         for provider in self.providers:
             try:
@@ -685,8 +801,14 @@ class CombinedPriceProvider(BasePriceProvider):
                     timestamp = self.normalize_timestamp(timestamp)
 
                     if timestamp not in prices:
-                        prices[timestamp] = round(price, 2)
+                        price = round(price, 2)
+
+                        prices[timestamp] = price
+                        real_prices[timestamp] = price
                         sources[timestamp] = f"{provider.source_name}:real"
+
+                        if sell_prices and timestamp in provider.sell_price_details:
+                            details[timestamp] = provider.sell_price_details[timestamp].copy()
 
             except Exception as e:
                 self._LOGGER.warning(f"Can't get real prices from {provider.func_name}: {e} {type(e)}")
@@ -702,48 +824,63 @@ class CombinedPriceProvider(BasePriceProvider):
                         prices[timestamp] = round(price, 2)
                         sources[timestamp] = f"{provider.source_name}:forecast"
 
+                        if sell_prices and timestamp in provider.sell_price_details:
+                            details[timestamp] = provider.sell_price_details[timestamp].copy()
+
             except Exception as e:
                 self._LOGGER.warning(f"Can't get forecast prices from {provider.func_name}: {e} {type(e)}")
 
         if not prices:
             raise Exception("No prices available from configured price providers")
 
-        return dict(sorted(prices.items())), dict(sorted(sources.items()))
+        return (
+            dict(sorted(prices.items())),
+            dict(sorted(real_prices.items())),
+            dict(sorted(sources.items())),
+            dict(sorted(details.items()))
+        )
+
+    def get_buy_prices(self):
+        return self.buy_prices
+
+    def get_sell_prices(self):
+        return self.sell_prices
+
+    def get_buy_real_prices(self):
+        return self.buy_real_prices
+
+    def get_sell_real_prices(self):
+        return self.sell_real_prices
 
     def get_sell_price(self, timestamp=None):
         if timestamp is None:
             timestamp = getTime()
 
         timestamp = self.normalize_timestamp(timestamp)
+        result = self.get_price_at_timestamp(self.sell_prices, timestamp)
 
-        for provider in self.providers:
-            try:
-                result = self.get_price_at_timestamp(provider.get_sell_real_prices(), timestamp)
+        if result is None:
+            raise Exception(f"No sell price available for {timestamp}")
 
-                if result is not None:
-                    return provider.get_sell_price(timestamp)
+        price_timestamp = result["price_timestamp"]
+        details = self.sell_price_details.get(price_timestamp)
 
-            except Exception as e:
-                self._LOGGER.debug(f"Can't get real sell price from {provider.func_name}: {e} {type(e)}")
+        if details is None:
+            return {
+                "price": result["price"],
+                "details": {
+                    "price_timestamp": price_timestamp,
+                    "solar_sell_price": result["price"]
+                }
+            }
 
-        for provider in self.providers:
-            try:
-                result = self.get_price_at_timestamp(provider.get_sell_forecast_prices(), timestamp)
-
-                if result is not None:
-                    return provider.get_sell_price(timestamp)
-
-            except Exception as e:
-                self._LOGGER.debug(f"Can't get forecast sell price from {provider.func_name}: {e} {type(e)}")
-
-        raise Exception(f"No sell price available for {timestamp}")
+        return {
+            "price": result["price"],
+            "details": details.copy()
+        }
 
     def buy_prices_available(self):
-        for provider in self.providers:
-            if provider.buy_prices_available():
-                return True
-
-        return False
+        return bool(self.buy_prices)
 
     def get_buy_price_entity_id(self):
         entities = []
@@ -761,22 +898,19 @@ class CombinedPriceProvider(BasePriceProvider):
             timestamp = getTime().replace(hour=hour, minute=0, second=0, microsecond=0)
 
         timestamp = self.normalize_timestamp(timestamp)
+        result = self.get_price_at_timestamp(self.sell_price_details, timestamp)
 
-        for provider in self.providers:
-            try:
-                if self.get_price_at_timestamp(provider.get_buy_real_prices(), timestamp) is not None:
-                    return provider.get_tariffs(hour, day_of_week, timestamp=timestamp)
+        if result is not None:
+            details = result["price"]
 
-            except Exception as e:
-                self._LOGGER.debug(f"Can't get real tariffs from {provider.func_name}: {e} {type(e)}")
-
-        for provider in self.providers:
-            try:
-                if self.get_price_at_timestamp(provider.get_buy_forecast_prices(), timestamp) is not None:
-                    return provider.get_tariffs(hour, day_of_week, timestamp=timestamp)
-
-            except Exception as e:
-                self._LOGGER.debug(f"Can't get forecast tariffs from {provider.func_name}: {e} {type(e)}")
+            return {
+                "transmissions_nettarif": details.get("transmissions_nettarif", 0.0),
+                "systemtarif": details.get("systemtarif", 0.0),
+                "elafgift": details.get("elafgift", 0.0),
+                "tariffs": details.get("tariffs", 0.0),
+                "surcharge": details.get("surcharge", 0.0),
+                "tariff_sum": details.get("tariff_sum", 0.0)
+            }
 
         return {
             "transmissions_nettarif": 0.0,
@@ -787,6 +921,22 @@ class CombinedPriceProvider(BasePriceProvider):
             "tariff_sum": 0.0
         }
 
+    def get_buy_periods_in_hour(self, timestamp):
+        periods = self._get_periods_in_hour(self.buy_real_prices, timestamp)
+
+        if periods > 0:
+            return periods
+
+        return 1
+
+    def get_sell_periods_in_hour(self, timestamp):
+        periods = self._get_periods_in_hour(self.sell_real_prices, timestamp)
+
+        if periods > 0:
+            return periods
+
+        return 1
+
 class EnergiDataServicePriceProvider(BasePriceProvider):
     func_name = "EnergiDataServicePriceProvider"
     func_prefix = f"{func_name}_"
@@ -795,6 +945,7 @@ class EnergiDataServicePriceProvider(BasePriceProvider):
 
     def setup(self, config):
         BasePriceProvider.setup(self, config)
+
         self.buy_entity_id = self.entity_ids.get("energidataservice_buy_entity_id", "")
         self.sell_entity_id = self.entity_ids.get("energidataservice_sell_entity_id", "") or self.buy_entity_id
         self.sell_configured = bool(self.entity_ids.get("energidataservice_sell_entity_id", ""))
@@ -805,13 +956,13 @@ class EnergiDataServicePriceProvider(BasePriceProvider):
     def get_buy_price_entity_id(self):
         return self.buy_entity_id
 
-    def get_buy_real_prices(self):
+    def _load_buy_real_prices(self):
         return self._get_real_prices(self.buy_entity_id)
 
-    def get_buy_forecast_prices(self):
+    def _load_buy_forecast_prices(self):
         return self._get_forecast_prices(self.buy_entity_id)
 
-    def get_sell_real_prices(self):
+    def _load_sell_real_prices(self):
         prices = self._get_real_prices(self.sell_entity_id)
 
         for timestamp, price in prices.items():
@@ -819,68 +970,13 @@ class EnergiDataServicePriceProvider(BasePriceProvider):
 
         return prices
 
-    def get_sell_forecast_prices(self):
+    def _load_sell_forecast_prices(self):
         prices = self._get_forecast_prices(self.sell_entity_id)
 
         for timestamp, price in prices.items():
             prices[timestamp] = self.calculate_sell_price(timestamp, price)
 
         return prices
-
-    def get_sell_price(self, timestamp=None):
-        if timestamp is None:
-            timestamp = getTime()
-
-        timestamp = self.normalize_timestamp(timestamp)
-
-        raw_prices = self._get_real_prices(self.sell_entity_id)
-        result = self.get_price_at_timestamp(raw_prices, timestamp)
-
-        if result is None:
-            raw_prices = self._get_forecast_prices(self.sell_entity_id)
-            result = self.get_price_at_timestamp(raw_prices, timestamp)
-
-        if result is None:
-            raise Exception(f"No sell price available for {timestamp}")
-
-        price_timestamp = result["price_timestamp"]
-        price = result["price"]
-
-        tariff_dict = self.get_tariffs(timestamp.hour, getDayOfWeek(timestamp), timestamp=timestamp)
-
-        transmissions_nettarif = tariff_dict["transmissions_nettarif"]
-        systemtarif = tariff_dict["systemtarif"]
-        elafgift = tariff_dict["elafgift"]
-        tariffs = tariff_dict["tariffs"]
-        tariff_sum = tariff_dict["tariff_sum"]
-
-        raw_price = price if self.sell_configured else price - tariff_sum
-
-        sell_tariffs = sum((
-            PRICE_PROVIDER.sell_fee,
-            transmissions_nettarif,
-            systemtarif
-        ))
-
-        sell_price = raw_price + sell_tariffs
-
-        return {
-            "price": sell_price,
-            "details": {
-                "price": price,
-                "price_timestamp": price_timestamp,
-                "transmissions_nettarif": transmissions_nettarif,
-                "systemtarif": systemtarif,
-                "elafgift": elafgift,
-                "tariffs": tariffs,
-                "tariff_sum": tariff_sum,
-                "raw_price": raw_price,
-                "transmissions_nettarif_": transmissions_nettarif,
-                "systemtarif_": systemtarif,
-                "sell_tariffs": sell_tariffs,
-                "solar_sell_price": sell_price,
-            },
-        }
 
     def _get_real_prices(self, entity_id):
         current_hour = self.normalize_timestamp(reset_time_to_hour(getTime()))
@@ -951,11 +1047,17 @@ class EnergiDataServicePriceProvider(BasePriceProvider):
                 }
 
             attr = power_prices_attr["tariffs"]
+
             transmissions_nettarif = attr["additional_tariffs"]["transmissions_nettarif"]
             systemtarif = attr["additional_tariffs"]["systemtarif"]
             elafgift = attr["additional_tariffs"]["elafgift"]
             tariffs = attr["tariffs"][str(hour)]
-            tariff_sum = sum([transmissions_nettarif, systemtarif, elafgift, tariffs])
+            tariff_sum = sum([
+                transmissions_nettarif,
+                systemtarif,
+                elafgift,
+                tariffs
+            ])
 
             return {
                 "transmissions_nettarif": transmissions_nettarif,
@@ -1008,13 +1110,13 @@ class StromligningPriceProvider(BasePriceProvider):
     def get_buy_price_entity_id(self):
         return self.buy_current_price
 
-    def get_buy_real_prices(self):
+    def _load_buy_real_prices(self):
         return self._get_real_prices(self.buy_current_price, self.buy_tomorrow_available)
 
-    def get_buy_forecast_prices(self):
+    def _load_buy_forecast_prices(self):
         return self._get_forecast_prices(self.buy_forecasts, self.buy_tomorrow_available)
 
-    def get_sell_real_prices(self):
+    def _load_sell_real_prices(self):
         prices = self._get_real_prices(self.sell_current_price, self.sell_tomorrow_available)
 
         for timestamp, price in prices.items():
@@ -1022,7 +1124,7 @@ class StromligningPriceProvider(BasePriceProvider):
 
         return prices
 
-    def get_sell_forecast_prices(self):
+    def _load_sell_forecast_prices(self):
         prices = self._get_forecast_prices(self.sell_forecasts, self.sell_tomorrow_available)
 
         for timestamp, price in prices.items():
@@ -1087,55 +1189,6 @@ class StromligningPriceProvider(BasePriceProvider):
 
             prices[timestamp] = price
 
-    def get_sell_price(self, timestamp=None):
-        if timestamp is None:
-            timestamp = getTime()
-
-        timestamp = self.normalize_timestamp(timestamp)
-        prices = self.get_sell_prices()
-        result = self.get_price_at_timestamp(prices, timestamp)
-
-        if result is None:
-            raise Exception(f"No sell price available for {timestamp}")
-
-        tariff_dict = self.get_tariffs(timestamp.hour, getDayOfWeek(timestamp), timestamp=timestamp)
-        sell_price = result["price"]
-        raw_price = self._get_raw_sell_price(timestamp)
-
-        return {
-            "price": sell_price,
-            "details": {
-                "price": raw_price,
-                "price_timestamp": result["price_timestamp"],
-                "transmissions_nettarif": tariff_dict["transmissions_nettarif"],
-                "systemtarif": tariff_dict["systemtarif"],
-                "elafgift": tariff_dict["elafgift"],
-                "tariffs": tariff_dict["tariffs"],
-                "surcharge": tariff_dict["surcharge"],
-                "tariff_sum": tariff_dict["tariff_sum"],
-                "raw_price": raw_price,
-                "sell_fee": self.sell_fee,
-                "solar_sell_price": sell_price,
-            },
-        }
-
-    def _get_raw_sell_price(self, timestamp):
-        timestamp = self.normalize_timestamp(timestamp)
-
-        real_prices = self._get_real_prices(self.sell_current_price, self.sell_tomorrow_available)
-        result = self.get_price_at_timestamp(real_prices, timestamp)
-
-        if result is None:
-            forecast_prices = self._get_forecast_prices(self.sell_forecasts, self.sell_tomorrow_available)
-            result = self.get_price_at_timestamp(forecast_prices, timestamp)
-
-        if result is None:
-            raise Exception(f"No raw sell price available for {timestamp}")
-
-        tariff_dict = self.get_tariffs(timestamp.hour, getDayOfWeek(timestamp), timestamp=timestamp)
-
-        return result["price"] - tariff_dict["tariff_sum"] if not self.sell_configured else result["price"]
-
     def get_tariffs(self, hour, day_of_week, timestamp=None):
         if timestamp is None:
             timestamp = getTime().replace(hour=hour, minute=0, second=0, microsecond=0)
@@ -1148,7 +1201,13 @@ class StromligningPriceProvider(BasePriceProvider):
         tariffs = self._get_entity_state(self.sell_nettariff)
         surcharge = self._get_entity_state(self.sell_surcharge)
 
-        tariff_sum = sum((transmissions_nettarif, systemtarif, elafgift, tariffs, surcharge))
+        tariff_sum = sum((
+            transmissions_nettarif,
+            systemtarif,
+            elafgift,
+            tariffs,
+            surcharge
+        ))
 
         return {
             "transmissions_nettarif": transmissions_nettarif,
@@ -1156,7 +1215,7 @@ class StromligningPriceProvider(BasePriceProvider):
             "elafgift": elafgift,
             "tariffs": tariffs,
             "surcharge": surcharge,
-            "tariff_sum": tariff_sum,
+            "tariff_sum": tariff_sum
         }
 
     def _get_distribution_price(self, timestamp):
@@ -4586,9 +4645,11 @@ def update_grid_prices(initial_run=False):
     func_name = "update_grid_prices"
     func_prefix = f"{func_name}_"
     _LOGGER = globals()['_LOGGER'].getChild(func_name)
-    global TASKS
+    global TASKS, PRICE_PROVIDER
 
     try:
+        PRICE_PROVIDER.update_prices()
+
         TASKS[f"{func_prefix}get_grid_prices"] = task.create(get_grid_prices, update_prices=True)
         TASKS[f"{func_prefix}get_sell_prices"] = task.create(get_sell_prices, update_prices=True)
         done, pending = task.wait({TASKS[f"{func_prefix}get_grid_prices"], TASKS[f"{func_prefix}get_sell_prices"]})
@@ -4621,7 +4682,7 @@ def get_hour_prices(update_prices=False, sell_prices=False):
     current_hour = reset_time_to_hour(now)
 
     hour_prices = {}
-    
+
     database = LAST_SUCCESSFUL_GRID_PRICES if not sell_prices else LAST_SUCCESSFUL_SELL_PRICES
     local_database_type = "history" if not sell_prices else "history_sell"
 
@@ -4644,15 +4705,15 @@ def get_hour_prices(update_prices=False, sell_prices=False):
                 hour_prices = PRICE_PROVIDER.get_sell_prices()
             else:
                 hour_prices = PRICE_PROVIDER.get_buy_prices()
-            
+
             if not hour_prices:
                 raise Exception(f"No {'sell' if sell_prices else 'grid'} prices returned from {type(PRICE_PROVIDER).__name__}")
 
             database.pop("missing_hours", None)
-            database["last_update"] = getTime()
+            database["last_update"] = now
             database["prices"] = deepcopy(hour_prices)
             database["using_offline_prices"] = False
-            
+
             if sell_prices:
                 database["sources"] = deepcopy(PRICE_PROVIDER.sell_price_sources)
             else:
@@ -4666,9 +4727,10 @@ def get_hour_prices(update_prices=False, sell_prices=False):
         else:
             _LOGGER.warning(f"Can't get online {'sell' if sell_prices else 'grid'} prices from {type(PRICE_PROVIDER).__name__}, using database: {e} {type(e)}")
 
-            database["last_update"] = getTime()
+            database["last_update"] = now
             database["prices"] = hour_prices
             database["using_offline_prices"] = True
+            database["sources"] = {}
 
             missing_hours = {}
 
@@ -4695,12 +4757,14 @@ def get_hour_prices(update_prices=False, sell_prices=False):
 
                         missing_hours[timestamp] = price
                         hour_prices[timestamp] = price
-                        database.setdefault("sources", {})[timestamp] = "offline"
+                        database["sources"][timestamp] = "offline"
 
                 if missing_hours:
                     missing_hours = dict(sorted(missing_hours.items()))
                     _LOGGER.debug(f"Using following offline prices: {missing_hours}")
                     database["missing_hours"] = missing_hours
+
+                database["prices"] = deepcopy(hour_prices)
 
             except Exception as ex:
                 error_message = f"Can't get offline prices: {ex} {type(ex)}"
@@ -5920,27 +5984,36 @@ def cheap_grid_charge_hours(force_recalculate = False):
                 powerwall_usage_profit = round(powerwall_usage_profit, 2)
                 powerwall_usage_profit_total.append(powerwall_usage_profit)
             
-            for i in range(hours + 1):
-                timestamp = current_hour + datetime.timedelta(hours=i)
+            day_periods_in_hour = PRICE_PROVIDER.get_sell_periods_in_hour(charging_plan[day]['start_of_day'])
+            day_periods = hours * day_periods_in_hour
+            
+            for i in range(day_periods + 1):
+                timestamp = current_hour + datetime.timedelta(minutes=(60 / day_periods_in_hour) * i)
                 what_day = daysBetween(charging_plan[0]['start_of_day'], timestamp)
                 hour = timestamp.hour
+                
+                if timestamp not in grid_sell_prices_for_day:
+                    continue
                 
                 if hour in exclude_hours:
                     continue
                 
-                battery_level = min(max(sum(charging_plan[what_day]['battery_level_flow'][hour]) - CONFIG['solar']['powerwall_battery_level_min'], 0.0), kwh_to_percentage(MAX_KWH_DISCHARGING, include_charging_loss = True))
+                periods_in_hour = PRICE_PROVIDER.get_sell_periods_in_hour(timestamp)
+                period_max_kwh_discharging = abs(MAX_KWH_DISCHARGING) / periods_in_hour
+                battery_level = min(max(sum(charging_plan[what_day]['battery_level_flow'][hour]) - CONFIG['solar']['powerwall_battery_level_min'], 0.0), kwh_to_percentage(period_max_kwh_discharging, include_charging_loss = True))
                 
                 if battery_level <= 0.0:
                     continue
                 
                 kwh = percentage_to_kwh(battery_level, include_charging_loss = True)
                 
-                min_sell_kwh = get_min_sell_kwh()
+                min_sell_kwh = get_min_sell_kwh() / periods_in_hour
                 
                 if kwh < min_sell_kwh:
                     continue
                 
                 battery_kwh_cost_raw, battery_loss_cost, battery_kwh_cost = _get_predicted_battery_cost(what_day, hour, predicted_battery_level = battery_level)
+                
                 
                 grid_sell_price = grid_sell_prices_for_day[timestamp]
                 
@@ -5957,8 +6030,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
                 
                 if sell_profit > min_sell_profit:
                     diff = grid_sell_profit - sum(powerwall_usage_profit_total)
-                    _LOGGER.info(f"day:{day} hour:{hour} timestamp:{timestamp} grid_sell_price:{grid_sell_price} battery_kwh_cost:{battery_kwh_cost} grid_sell_profit:{grid_sell_profit} > powerwall_usage_profit_total:{sum(powerwall_usage_profit_total)}:{grid_sell_profit > sum(powerwall_usage_profit_total)}")
-
+                    
                     fixed_price_calc_text = ""
                     if not using_grid_sell_price:
                         fixed_price_calc_text = f"{sell_price:.2f} - {grid_sell_prices.get(timestamp, 0.0):.2f} ="
@@ -5992,6 +6064,8 @@ def cheap_grid_charge_hours(force_recalculate = False):
             lowest_battery_level = sum(charging_plan[day]['battery_level_end_of_day'])
             using_next_day = False
             
+            day_periods_in_hour = PRICE_PROVIDER.get_sell_periods_in_hour(charging_plan[day]['start_of_day'])
+            
             if not use_midnight_battery_level_enabled():
                 if day < amount_of_days - 1:
                     for hour in range(24):
@@ -6014,11 +6088,12 @@ def cheap_grid_charge_hours(force_recalculate = False):
                         
                         if lowest_battery_level == CONFIG['solar']['powerwall_battery_level_min']:
                             break
+                        
             lowest_battery_level = round(lowest_battery_level, 0)
             lowest_battery_level = lowest_battery_level - CONFIG['solar']['powerwall_battery_level_min']
             excess_kwh_available = round(percentage_to_kwh(max(lowest_battery_level, 0.0), include_charging_loss = True), 1)
             
-            min_sell_kwh = get_min_sell_kwh()
+            min_sell_kwh = get_min_sell_kwh() / day_periods_in_hour
             
             if (excess_kwh_available < min_sell_kwh and excess_kwh_available > 0.0) or excess_kwh_available <= 0.0:
                 _LOGGER.warning(f"Excess kWh available for day:{day} is {excess_kwh_available:.2f}kWh at lowest battery level of {lowest_battery_level:.1f}% at timestamp:{lowest_timestamp}, which is at or below 1.0kWh, skipping selling excess kWh")
@@ -6035,10 +6110,10 @@ def cheap_grid_charge_hours(force_recalculate = False):
             if using_next_day:
                 _LOGGER.info(f"Using lowest battery level of next day before battery charging for calculating excess_kwh_available for day:{day} which is at {lowest_timestamp} with battery level:{lowest_battery_level:.1f}% resulting in excess_kwh_available:{excess_kwh_available:.2f}kWh")
             
-            discharge_hours_needed = int(round_up(excess_kwh_available / (abs(MAX_KWH_DISCHARGING))))
+            discharge_hours_needed = int(round_up(excess_kwh_available / (abs(MAX_KWH_DISCHARGING) / day_periods_in_hour)))
             
             using_grid_sell_price = True
-            grid_sell_prices_for_day = {timestamp: price for timestamp, price in grid_sell_prices.items() if in_between(timestamp, charging_plan[day]['start_of_day'], lowest_timestamp + datetime.timedelta(hours=1))}
+            grid_sell_prices_for_day = {timestamp: price for timestamp, price in grid_sell_prices.items() if in_between(timestamp, charging_plan[day]['start_of_day'], charging_plan[day]['end_of_day'] + datetime.timedelta(hours=6))}
             sell_price = float(get_state(f"input_number.{__name__}_solar_sell_fixed_price", float_type=True, error_state=CONFIG['solar']['production_price']))
             
             if sell_price != -1.0:
@@ -6054,12 +6129,15 @@ def cheap_grid_charge_hours(force_recalculate = False):
                 if round(excess_kwh_available, 1) <= 0.0:
                     break
                 
-                if i >= discharge_hours_needed:
+                if i > discharge_hours_needed:
                     break
                 
                 for timestamp, price in sorted(grid_sell_prices_for_day.items(), key=lambda kv: (kv[1], kv[0]), reverse=True):
                     if round(excess_kwh_available, 1) <= 0.0:
                         break
+                    
+                    if timestamp not in grid_sell_prices_for_day:
+                        continue
                     
                     if timestamp < current_hour:
                         continue
@@ -6075,7 +6153,9 @@ def cheap_grid_charge_hours(force_recalculate = False):
                     battery_level = charging_plan[what_day]['battery_level_flow'].get(timestamp.hour, None)
                     loop_battery_kwh_cost_raw, loop_battery_loss_cost, loop_battery_kwh_cost = _get_predicted_battery_cost(day, timestamp.hour, predicted_battery_level = sum(battery_level) if battery_level is not None else None)
                     
-                    excess_kwh_available_current_hour = min(excess_kwh_available, abs(MAX_KWH_DISCHARGING))
+                    periods_in_hour = PRICE_PROVIDER.get_sell_periods_in_hour(timestamp)
+                    
+                    excess_kwh_available_current_hour = min(excess_kwh_available, (abs(MAX_KWH_DISCHARGING) / periods_in_hour))
                     
                     excess_profit = excess_kwh_available_current_hour * price
                     excess_profit -= excess_kwh_available_current_hour * loop_battery_kwh_cost
@@ -6083,8 +6163,11 @@ def cheap_grid_charge_hours(force_recalculate = False):
                     kwh_profit = price - loop_battery_kwh_cost
                     min_profit_per_kwh = get_min_profit_per_kwh()
                     
-                    if kwh_profit < min_profit_per_kwh:
-                        continue
+                    if day == 0 and timestamp in CHARGING_PLAN.get(day, {}).get('force_discharge_timestamps', {}) and hoursBetween(now, timestamp, error_value=-1) == 0 and excess_profit > 0.0:
+                        pass
+                    else:
+                        if kwh_profit < min_profit_per_kwh:
+                            continue
                     
                     excess_kwh_available -= excess_kwh_available_current_hour
                     
@@ -6098,7 +6181,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
                     fixed_price_calc_text = ""
                     if not using_grid_sell_price:
                         fixed_price_calc_text = f"{sell_price:.2f} - {grid_sell_prices.get(timestamp, 0.0):.2f} ="
-                    
+                        
                     charging_plan[what_day]["force_discharge_timestamps"][timestamp] = {
                         "kwh": excess_kwh_available_current_hour,
                         "profit": excess_profit,
@@ -6114,19 +6197,6 @@ def cheap_grid_charge_hours(force_recalculate = False):
                             "</details>"
                         ),
                         }
-                    if day == 0 and getHour() == timestamp.hour and getMinute() == 0:
-                        my_persistent_notification(
-                            f"""{emoji_parse({'discharging': True})}Sælger overskydende kWh ({excess_profit:.2f}){other_day}
-                            Battery kWh cost (basis): **{loop_battery_kwh_cost_raw:.2f} {i18n.t('ui.common.valuta_kwh')}**
-                            Charge/Discharge loss: **{loop_battery_loss_cost:.2f} {i18n.t('ui.common.valuta_kwh')}**
-                            Wear cost per kWh: **{abs(CONFIG['solar']['powerwall_wear_cost_per_kwh']):.2f} {i18n.t('ui.common.valuta_kwh')}**
-                            **Samlet battery kWh cost**: **{loop_battery_kwh_cost:.2f} {i18n.t('ui.common.valuta_kwh')}**
-                            Grid price: **{fixed_price_calc_text}{price:.2f} {i18n.t('ui.common.valuta_kwh')}**
-                            Excess kWh sold: **{excess_kwh_available_current_hour:.2f} kWh**
-                            Profit from selling: **{excess_profit:.2f} {i18n.t('ui.common.valuta')}**""",
-                            title=f"{TITLE} force_discharge_timestamps {timestamp}",
-                            persistent_notification_id=f"{__name__}_{func_name}_{sub_func_name}_{sub_sub_func_name}force_discharge_timestamps_{timestamp}"
-                        )
             
             if len(charging_plan[day]["force_discharge_timestamps"]) == 0:
                 battery_kwh_cost_raw, battery_loss_cost, battery_kwh_cost = _get_predicted_battery_cost(day)
@@ -7926,8 +7996,20 @@ def current_hour_in_discharge_hours():
     return False
 
 def current_hour_in_force_discharge_hours():
-    current_hour = getTime().hour
+    current_time = getTime()
+    periods = PRICE_PROVIDER.get_sell_periods_in_hour(current_time)
+    period_length = datetime.timedelta(minutes=60 / periods)
+
     for timestamp in CHARGING_PLAN[0]['force_discharge_timestamps']:
+        if isinstance(timestamp, datetime.datetime):
+            if in_between(current_time, timestamp, timestamp + period_length):
+                return timestamp
+
+    return False
+
+def current_hour_in_force_powerwall_max_hours_old_discharge_hours():
+    current_hour = getTime().hour
+    for timestamp in CHARGING_PLAN[0]['force_powerwall_max_hours_old_discharge_timestamps']:
         if isinstance(timestamp, datetime.datetime):
             if timestamp.hour == current_hour:
                 return timestamp
