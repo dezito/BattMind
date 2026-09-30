@@ -3465,7 +3465,7 @@ def get_exclude_sell_hours():
     _LOGGER = globals()['_LOGGER'].getChild(func_name)
     
     try:
-        exclude_hours_str = get_state(f"input_text.{__name__}_exclude_sell_hours", error_state="")
+        exclude_hours_str = get_state(f"input_text.{__name__}_exclude_sell_hours", try_history=False, error_state="")
         exclude_hours = [int(hour.strip()) for hour in exclude_hours_str.split(",") if hour.strip().isdigit()]
         return exclude_hours
     except Exception as e:
@@ -3476,7 +3476,7 @@ def get_min_profit_per_kwh():
     func_name = "get_min_profit_per_kwh"
     _LOGGER = globals()['_LOGGER'].getChild(func_name)
     try:
-        return float(get_state(f"input_number.{__name__}_min_profit_per_kwh", float_type=True, error_state=None)) if only_discharge_on_profit_enabled() else 0.0
+        return float(get_state(f"input_number.{__name__}_min_profit_per_kwh", try_history=False, float_type=True, error_state=None)) if only_discharge_on_profit_enabled() else 0.0
     except Exception as e:
         _LOGGER.error(f"Failed to get min profit per kwh from input_number.{__name__}_min_profit_per_kwh, using default 0.0: {e} {type(e)}")
         return 0.0
