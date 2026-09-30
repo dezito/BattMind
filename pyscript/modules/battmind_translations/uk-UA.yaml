@@ -62,6 +62,8 @@ config:
     km_kwh_efficiency_db_data_to_save: "Обсяг збереження"
     charging_history_db_data_to_save: "Зберігати історію за X місяців"
 
+  enable_diagnostic_file_log: "Вмикає діагностичне файлове логування для налагодження.\nЛоги записуються в окремий файл з автоматичною ротацією\n(2 МБ на файл, 3 ротовані файли)."
+
   forecast:
     entity_ids:
       hourly_service_entity_id: "**Обов’язково при використанні сонця** Сутність погодинного прогнозу"
