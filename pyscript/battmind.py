@@ -1616,7 +1616,7 @@ def wait_for_entity_update(entity_id=None, updated_within_minutes=5, max_wait_ti
                 current_state = values_sorted[1][1]
                 current_state_timestamp = values_sorted[1][0]
                 if current_state_timestamp > last_state_timestamp:
-                    _LOGGER.info(f"{entity_id} state stable at {current_state} now, no need to wait anymore")
+                    _LOGGER.debug(f"{entity_id} state stable at {current_state} now, no need to wait anymore")
                     return True
             _LOGGER.info(f"Waiting for {entity_id} to update, last state {int(last_state)} at {last_state_timestamp}, now {getTime()}")
             task.wait_until(timeout=check_interval)
@@ -4335,7 +4335,7 @@ def charging_history_combine_and_set(get_ending_byte_size: bool = False):
         )
         CHARGING_HISTORY_DB = combined_db
 
-@benchmark_decorator()
+@benchmark_decorator(filename=__name__)
 @service(f"pyscript.{__name__}_recalc_charging_history_today")
 def recalc_charging_history_today():
     """yaml
@@ -4934,7 +4934,6 @@ def make_hashable_snapshot(data):
 
     return hashlib.blake2b(json_data.encode(), digest_size=16).hexdigest()
 
-@benchmark_decorator()
 def save_hashable_snapshot():
     func_name = "save_hashable_snapshot"
     _LOGGER = globals()['_LOGGER'].getChild(func_name)
@@ -4943,7 +4942,6 @@ def save_hashable_snapshot():
     for key, item in get_hash_dict().items():
         LAST_HASH_RESULTS[key] = make_hashable_snapshot(item)
 
-@benchmark_decorator()
 def should_skip_calculation():
     func_name = "should_skip_calculation"
     _LOGGER = globals()['_LOGGER'].getChild(func_name)
@@ -4963,7 +4961,7 @@ def should_skip_calculation():
     
     return skip_calculation
 
-@benchmark_decorator()
+@benchmark_decorator(filename=__name__)
 def cheap_grid_charge_hours(force_recalculate = False):
     func_name = "cheap_grid_charge_hours"
     func_prefix = f"{func_name}_"
@@ -8079,7 +8077,6 @@ def current_hour_in_force_powerwall_max_hours_old_discharge_hours():
 def no_charging_modes_active():
     return False
 
-@benchmark_decorator()
 def charge_if_needed(force_recalculate = False):
     func_name = "charge_if_needed"
     func_prefix = f"{func_name}_"
@@ -8209,9 +8206,14 @@ def kwh_charged_by_solar():
         powerwall_values = TASKS[f"{func_prefix}powerwall_values"].result()
         solar_watt = TASKS[f"{func_prefix}solar_watt"].result()
         
-        if not powerwall_values or not solar_watt:
-            _LOGGER.error("No powerwall_values or solar_watt value, returning without setting kwh charged by solar")
-            _LOGGER.error(f"powerwall_values: {powerwall_values}, solar_watt: {solar_watt}")
+        if not powerwall_values:
+            _LOGGER.error("No powerwall_values value, returning without setting kwh charged by solar")
+            _LOGGER.error(f"powerwall_values: {powerwall_values}")
+            return
+        
+        if not solar_watt:
+            _LOGGER.error("No solar_watt value, returning without setting kwh charged by solar")
+            _LOGGER.error(f"solar_watt: {solar_watt}")
             return
         
         watt = charge_from_powerwall(powerwall_values)
@@ -8489,7 +8491,7 @@ if INITIALIZATION_COMPLETE:
             finally:
                 task_cancel(func_prefix, task_remove=True, timeout=5.0, startswith=True)
                 
-    @benchmark_decorator()
+    @benchmark_decorator(filename=__name__)
     @time_trigger("startup")
     def startup(trigger_type=None, var_name=None, value=None, old_value=None):
         func_name = "startup"
