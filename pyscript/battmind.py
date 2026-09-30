@@ -5184,14 +5184,20 @@ def cheap_grid_charge_hours(force_recalculate = False):
             percentage_sold = 0.0
             percentage_used = charging_plan[day]['hour_cost_prediction'][FORECAST_TYPE][hour]['percentage'] * -1
             
-            if timestamp in charging_plan[day]["force_discharge_timestamps"]:
+            if charging_plan[day]["force_discharge_timestamps"]:
                 discharge_limit_percentage = kwh_to_percentage(MAX_KWH_DISCHARGING, include_charging_loss = True)
-                percentage_sold = kwh_to_percentage(charging_plan[day]["force_discharge_timestamps"][timestamp]['kwh'], include_charging_loss = True) * -1
+                
+                for ts in charging_plan[day]["force_discharge_timestamps"]:
+                    if ts.hour != timestamp.hour:
+                        continue
+                    
+                    percentage_sold += kwh_to_percentage(charging_plan[day]["force_discharge_timestamps"][ts]['kwh'], include_charging_loss = True) * -1
                 
                 if abs(percentage_sold) + percentage_added > discharge_limit_percentage:
                     diff = abs(percentage_sold) + percentage_added - discharge_limit_percentage
                     percentage_sold -= diff * -1
-            elif timestamp not in charging_plan[day]["discharge_timestamps"]:
+                    
+            if timestamp not in charging_plan[day]["discharge_timestamps"]:
                 percentage_used = 0.0
                     
 
