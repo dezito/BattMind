@@ -666,6 +666,18 @@ class BasePriceProvider:
     def _load_sell_forecast_prices(self):
         return {}
 
+    def get_buy_price(self, timestamp=None):
+        if timestamp is None:
+            timestamp = getTime()
+
+        timestamp = self.normalize_timestamp(timestamp)
+        result = self.get_price_at_timestamp(self.get_buy_real_prices(), timestamp)
+
+        if result is None:
+            raise Exception(f"No real buy price available for {timestamp}")
+
+        return result["price"]
+
     def get_sell_price(self, timestamp=None):
         if timestamp is None:
             timestamp = getTime()
@@ -860,6 +872,18 @@ class CombinedPriceProvider(BasePriceProvider):
 
     def get_sell_real_prices(self):
         return self.sell_real_prices
+
+    def get_buy_price(self, timestamp=None):
+        if timestamp is None:
+            timestamp = getTime()
+
+        timestamp = self.normalize_timestamp(timestamp)
+        result = self.get_price_at_timestamp(self.buy_real_prices, timestamp)
+
+        if result is None:
+            raise Exception(f"No real buy price available for {timestamp}")
+
+        return result["price"]
 
     def get_sell_price(self, timestamp=None):
         if timestamp is None:
