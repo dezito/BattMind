@@ -62,6 +62,8 @@ config:
     km_kwh_efficiency_db_data_to_save: "Mængde der gemmes"
     charging_history_db_data_to_save: "Gem X måneder tilbage"
 
+  enable_diagnostic_file_log: "Aktiverer diagnostisk fil-logging til fejlfinding.\nLogger skrives til separat fil med automatisk rotation\n(2 MB pr. fil, 3 roterede filer)."
+
   forecast:
     entity_ids:
       hourly_service_entity_id: "**Påkrævet ved sol** Timeprognose entity_id"

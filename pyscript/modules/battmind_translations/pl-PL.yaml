@@ -62,6 +62,8 @@ config:
     km_kwh_efficiency_db_data_to_save: "Ilość przechowywana"
     charging_history_db_data_to_save: "Przechowuj X miesięcy historii"
 
+  enable_diagnostic_file_log: "Włącza diagnostyczne logowanie do pliku w celu debugowania.\nLogi są zapisywane do osobnego pliku z automatyczną rotacją\n(2 MB na plik, 3 rotowane pliki)."
+
   forecast:
     entity_ids:
       hourly_service_entity_id: "**Wymagane przy użyciu PV** Encja prognozy godzinowej"
