@@ -178,6 +178,9 @@ entity:
     most_profit:
       name: "Розряджання: Максимізувати прибуток"
       description: "Увімкніть, щоб розряджати тоді, коли це приносить найбільший прибуток, а не лише коли це вигідно"
+    force_powerwall_max_hours_old_discharge:
+      name: "Примусове розряджання: Макс. вік кВт·год у годинах"
+      description: "Увімкніть, щоб розряджати кВт·год, старші за максимальну кількість годин, навіть якщо це невигідно"
 
   input_number:
     kwh_charged_by_solar:
@@ -206,6 +209,10 @@ entity:
       name: "Мін. надлишок кВт·год для продажу"
       description: "Мінімальний надлишок кВт·год для продажу, необхідний для дозволу на розряджання"
       unit_of_measurement: kWh
+    powerwall_max_hours_old:
+      name: "Макс. вік кВт·год у домашній батареї"
+      description: "Максимальна кількість годин, протягом яких кВт·год можуть зберігатися в домашній батареї, перш ніж їх необхідно розрядити, навіть якщо це невигідно"
+      unit_of_measurement: години
 
   # ---- input_text ----
   input_text:
@@ -368,6 +375,7 @@ ui:
     force_discharge: "Примусове розряджання"
     charging_watt: "Заряджання {watt}W"
     discharging_watt: "Розряджання {watt}W"
+    force_powerwall_max_hours_old_discharge: "Розряджання старіших кВт·год дозволено"
 
   startup:
     configuration:

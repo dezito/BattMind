@@ -178,6 +178,9 @@ entity:
     most_profit:
       name: "Entladen: Gewinn maximieren"
       description: "Aktiviere dies, um dann zu entladen, wenn der höchste Gewinn erzielt wird, anstatt nur bei profitablem Entladen"
+    force_powerwall_max_hours_old_discharge:
+      name: "Erzwungene Entladung: Max. Alter der kWh in Stunden"
+      description: "Aktiviere dies, um kWh zu entladen, die älter als die maximale Anzahl an Stunden sind, auch wenn dies nicht profitabel ist"
 
   input_number:
     kwh_charged_by_solar:
@@ -206,6 +209,11 @@ entity:
       name: "Min. überschüssige kWh zum Verkauf"
       description: "Mindestmenge an überschüssigen kWh zum Verkauf, um das Entladen zu erlauben"
       unit_of_measurement: kWh
+    powerwall_max_hours_old:
+      name: "Max. Alter der kWh im Hausbatterie"
+      description: "Maximale Anzahl an Stunden, die kWh im Hausbatterie gespeichert sein dürfen, bevor sie entladen werden müssen, auch wenn dies nicht profitabel ist"
+      unit_of_measurement: Stunden
+      
   # ---- input_text ----
   input_text:
     exclude_sell_hours:
@@ -367,6 +375,7 @@ ui:
     force_discharge: "Erzwungene Entladung"
     charging_watt: "Lädt {watt}W"
     discharging_watt: "Entlädt {watt}W"
+    force_powerwall_max_hours_old_discharge: "Entladung älterer kWh erlaubt"
 
   startup:
     configuration:
