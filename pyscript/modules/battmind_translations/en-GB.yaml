@@ -178,6 +178,9 @@ entity:
     most_profit:
       name: "Discharging: Maximise profit"
       description: "Enable this to discharge when it delivers the highest profit, instead of only discharging when it is profitable"
+    force_powerwall_max_hours_old_discharge:
+      name: "Forced discharge: Max. kWh age in hours"
+      description: "Enable this to discharge kWh that are older than the maximum number of hours, even when it is not profitable"
 
   input_number:
     kwh_charged_by_solar:
@@ -206,6 +209,10 @@ entity:
       name: "Minimum excess kWh for export"
       description: "Minimum excess kWh available for export before discharging is allowed"
       unit_of_measurement: kWh
+    powerwall_max_hours_old:
+      name: "Max. age of kWh in home battery"
+      description: "Maximum number of hours kWh may remain stored in the home battery before they must be discharged, even when it is not profitable"
+      unit_of_measurement: hours
 
   # ---- input_text ----
   input_text:
@@ -368,6 +375,7 @@ ui:
     force_discharge: "Forced discharging"
     charging_watt: "Charging {watt}W"
     discharging_watt: "Discharging {watt}W"
+    force_powerwall_max_hours_old_discharge: "Discharging older kWh allowed"
 
   startup:
     configuration:

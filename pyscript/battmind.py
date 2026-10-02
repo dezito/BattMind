@@ -40,7 +40,7 @@ from hass_manager import (
     get_identifiers,
     get_integration,
     reload_integration,
-    get_sun_events,)
+    get_sun_events)
 from history import (
     interpolate_data,
     get_values,
@@ -330,6 +330,7 @@ DEFAULT_CONFIG = {
         "powerwall_charge_discharge_loss": 0.1,
         "use_charge_discharge_loss_from_history": True,
         "powerwall_wear_cost_per_kwh": 0.1,
+        "force_powerwall_max_hours_old_discharge": True,
     },
     "testing_mode": False
 }
@@ -361,6 +362,7 @@ DEFAULT_ENTITIES = {
             f"input_boolean.{__name__}_sell_excess_kwh_available": {},
             f"input_boolean.{__name__}_use_midnight_battery_level": {},
             f"input_boolean.{__name__}_most_profit": {},
+            f"input_boolean.{__name__}_force_powerwall_max_hours_old_discharge": {},
             
             f"input_number.{__name__}_kwh_charged_by_solar": {},
             f"input_number.{__name__}_solar_sell_fixed_price": {},
@@ -369,6 +371,7 @@ DEFAULT_ENTITIES = {
             f"input_number.{__name__}_cheap_price_period_rise_threshold": {},
             f"input_number.{__name__}_min_profit_per_kwh": {},
             f"input_number.{__name__}_min_sell_kwh": {},
+            f"input_number.{__name__}_powerwall_max_hours_old": {},
             
             f"input_text.{__name__}_exclude_sell_hours": {},
         },
@@ -432,7 +435,10 @@ DEFAULT_ENTITIES = {
         },
         f"{__name__}_most_profit":{
             "icon": "mdi:cash-multiple"
-        }
+        },
+        f"{__name__}_force_powerwall_max_hours_old_discharge":{
+            "icon": "mdi:clock-out"
+        },
     },
     "input_number":{
         f"{__name__}_kwh_charged_by_solar":{
@@ -485,6 +491,13 @@ DEFAULT_ENTITIES = {
             "mode":"box",
             "unit_of_measurement": "kWh",
             "icon": "mdi:wallet-outline"
+        },
+        f"{__name__}_powerwall_max_hours_old":{
+            "min": 1,
+            "max": CHARGING_HISTORY_COMBINE_AFTER,
+            "step": 1,
+            "mode":"box",
+            "icon": "mdi:clock-time-four-outline"
         },
     },
     "input_text":{
@@ -3525,6 +3538,15 @@ def get_min_sell_kwh():
     except Exception as e:
         _LOGGER.error(f"Failed to get min sell kwh from input_number.{__name__}_min_sell_kwh, using default 0.2: {e} {type(e)}")
         return 0.2
+    
+def get_powerwall_max_hours_old():
+    func_name = "get_powerwall_max_hours_old"
+    _LOGGER = globals()['_LOGGER'].getChild(func_name)
+    try:
+        return float(get_state(f"input_number.{__name__}_powerwall_max_hours_old", float_type=True, error_state=None))
+    except Exception as e:
+        _LOGGER.error(f"Failed to get powerwall max hours old from input_number.{__name__}_powerwall_max_hours_old, using default 2.0: {e} {type(e)}")
+        return 24.0
 
 def deactivate_script_enabled():
     if get_state(f"input_boolean.{__name__}_deactivate_script") == "on":
@@ -3598,7 +3620,9 @@ def most_profit_enabled():
     if get_state(f"input_boolean.{__name__}_most_profit") == "on":
         return True
     
-
+def force_powerwall_max_hours_old_discharge_enabled():
+    if get_state(f"input_boolean.{__name__}_force_powerwall_max_hours_old_discharge") == "on":
+        return True
 
 def get_solar_sell_price(set_entity_attr=False, get_avg_offline_sell_price=False, timestamp=None):
     func_name = "get_solar_sell_price"
@@ -4931,6 +4955,7 @@ def get_hash_dict():
             sell_excess_kwh_available_enabled(),
             use_midnight_battery_level_enabled(),
             most_profit_enabled(),
+            force_powerwall_max_hours_old_discharge_enabled(),
         ),
     }
     
@@ -6333,7 +6358,69 @@ def cheap_grid_charge_hours(force_recalculate = False):
                         f"Profit from selling: <b>{profit:.2f} {i18n.t('ui.common.valuta_kwh')}</b><br>"
                         "</details>"
                     )
+        
+        def force_powerwall_max_hours_old_discharge(day):
+            nonlocal func_name, sub_func_name
+            sub_sub_func_name = "force_powerwall_max_hours_old_discharge"
+            _LOGGER = globals()['_LOGGER'].getChild(f"{func_name}.{sub_func_name}.{sub_sub_func_name}")
+            
+            nonlocal charging_plan, grid_prices, grid_sell_prices, battery_expenses
+            
+            if day != 0:
+                return
+            
+            battery_expenses_keys = sorted([key for key in battery_expenses.keys() if isinstance(key, datetime.datetime)])
+            oldest_battery_kwh = battery_expenses_keys[0] if battery_expenses_keys else False
+            
+            if not oldest_battery_kwh:
+                return
+            
+            data = battery_expenses[oldest_battery_kwh]
+            hours_old = hoursBetween(oldest_battery_kwh, current_hour)
+            
+            if hours_old < get_powerwall_max_hours_old():
+                _LOGGER.debug(f"Day:{day} current_hour:{current_hour} is too recent, skipping it")
+                return
+            
+            if current_hour in charging_plan[day]['charging_sessions']:
+                _LOGGER.debug(f"Day:{day} current_hour:{current_hour} is in charging_sessions, skipping it")
+                return
+            
+            if current_hour in charging_plan[day]['force_discharge_timestamps']:
+                _LOGGER.debug(f"Day:{day} current_hour:{current_hour} is in force_discharge_timestamps, skipping it")
+                return
+            
+            charging_plan[day]['blocked_discharge_timestamps'].pop(current_hour, None)
+            
+            if current_hour not in charging_plan[day]["discharge_timestamps"]:
+                _LOGGER.warning(f"Day:{day} current_hour:{current_hour} not in discharge_timestamps, adding it back to discharge_timestamps")
+                charging_plan[day]["discharge_timestamps"].append(current_hour)
                 
+                price = grid_prices.get(current_hour, data['price'])
+                profit = price - data['price']
+                battery_loss_cost = calc_battery_loss_cost(data['price'])
+                battery_kwh_cost = data['price'] + battery_loss_cost + abs(CONFIG['solar']['powerwall_wear_cost_per_kwh'])
+                
+                excess_kwh_from_history = 0.0
+                for key in sorted(battery_expenses_keys, reverse=True):
+                    excess_kwh_from_history += battery_expenses[key]['kWh']
+                kwh = data['kWh']+(data['kWh'] - excess_kwh_from_history)
+                    
+                charging_plan[day]["force_powerwall_max_hours_old_discharge_timestamps"][current_hour] = {
+                    "kwh": kwh,
+                    "profit": profit,
+                    "reason": (
+                        f"<details><summary>{emoji_parse({'discharging': True})}Gammel strøm bruges ({profit:.2f})</summary>"
+                        f"Battery kWh cost (basis): **{data['price']:.2f} {i18n.t('ui.common.valuta_kwh')}**<br>"
+                        f"Charge/Discharge loss: **{battery_loss_cost:.2f} {i18n.t('ui.common.valuta_kwh')}**<br>"
+                        f"Wear cost per kWh: **{abs(CONFIG['solar']['powerwall_wear_cost_per_kwh']):.2f} {i18n.t('ui.common.valuta_kwh')}**<br>"
+                        f"**Samlet battery kWh cost**: **{battery_kwh_cost:.2f} {i18n.t('ui.common.valuta_kwh')}**<br>"
+                        f"Grid buy price: **{price:.2f} {i18n.t('ui.common.valuta_kwh')}**<br>"
+                        f"Profit from using battery: **{profit:.2f} {i18n.t('ui.common.valuta')}**<br>"
+                        "</details>"
+                    ),
+                }
+        
         charging_rules = {
             1: {
                 "name": "cheapest_hour_fill_planner",
@@ -6373,6 +6460,11 @@ def cheap_grid_charge_hours(force_recalculate = False):
                 "enabled_func": sell_excess_kwh_available_enabled(),
                 "func": sell_excess_kwh_available
             },
+            3: {
+                "name": "force_powerwall_max_hours_old_discharge",
+                "enabled_func": force_powerwall_max_hours_old_discharge_enabled(),
+                "func": force_powerwall_max_hours_old_discharge
+            }
         }
         
         for day in sorted([key for key in charging_plan.keys() if isinstance(key, int)]):
@@ -6506,6 +6598,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
             "discharge_timestamps": [],
             "force_discharge_timestamps": {},
             "blocked_discharge_timestamps": {},
+            "force_powerwall_max_hours_old_discharge_timestamps": {},
         }
         
         charging_plan[day]['hour_cost_prediction']['correction_factor'] = correction_factor
@@ -6668,6 +6761,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
     discharge_timestamps = []
     force_discharge_timestamps = []
     force_solar_only_charging_timestamps = []
+    force_powerwall_max_hours_old_discharge_timestamps = []
     
     for day in charging_plan.keys():
         if not isinstance(day, int):
@@ -6676,6 +6770,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
         charge_timestamps.extend(charging_plan[day]["charging_sessions"].keys())
         discharge_timestamps.extend(charging_plan[day]["discharge_timestamps"])
         force_discharge_timestamps.extend(list(charging_plan[day]["force_discharge_timestamps"].keys()))
+        force_powerwall_max_hours_old_discharge_timestamps.extend(list(charging_plan[day]["force_powerwall_max_hours_old_discharge_timestamps"].keys()))
         
         for hour in range(24):
             if hour not in charging_plan[day]['battery_level_flow']:
@@ -6685,7 +6780,8 @@ def cheap_grid_charge_hours(force_recalculate = False):
             
             if (timestamp in charge_timestamps or
                 timestamp in discharge_timestamps or
-                timestamp in force_discharge_timestamps):
+                timestamp in force_discharge_timestamps or
+                timestamp in force_powerwall_max_hours_old_discharge_timestamps):
                 continue
             
             force_solar_only_charging_timestamps.append(timestamp)
@@ -6694,6 +6790,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
     set_attr(f"sensor.{__name__}_powerwall_action.discharge_timestamps", discharge_timestamps)
     set_attr(f"sensor.{__name__}_powerwall_action.force_discharge_timestamps", force_discharge_timestamps)
     set_attr(f"sensor.{__name__}_powerwall_action.force_solar_only_charging_timestamps", force_solar_only_charging_timestamps)
+    set_attr(f"sensor.{__name__}_powerwall_action.force_powerwall_max_hours_old_discharge_timestamps", force_powerwall_max_hours_old_discharge_timestamps)
             
     hour_cost_prediction_avg_dict = {}
     hour_cost_prediction_ema_dict = {}
@@ -6960,6 +7057,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
                 continue
         
             dict_timestamps_joined = {}
+            dict_timestamps_joined.update(charging_plan[day]['force_powerwall_max_hours_old_discharge_timestamps'])
             dict_timestamps_joined.update(charging_plan[day]['blocked_discharge_timestamps'])
             dict_timestamps_joined.update(charging_plan[day]['force_discharge_timestamps'])
             dict_timestamps_joined.update(charging_plan[day]['charging_sessions'])
@@ -8157,6 +8255,7 @@ def charge_if_needed(force_recalculate = False):
             charge_hour = current_hour_in_charge_hours()
             discharge_hour = current_hour_in_discharge_hours()
             force_discharge_hour = current_hour_in_force_discharge_hours()
+            force_powerwall_max_hours_old_discharge_hour = current_hour_in_force_powerwall_max_hours_old_discharge_hours()
             
             if charge_hour:
                 timestamp = charge_hour
@@ -8177,6 +8276,9 @@ def charge_if_needed(force_recalculate = False):
                 powerwall_action = "discharge_allowed"
                 
                 charging_rule = i18n.t('ui.charge_if_needed.discharge_allowed')
+            elif force_powerwall_max_hours_old_discharge_hour:
+                powerwall_action = "discharge_allowed"
+                charging_rule = i18n.t('ui.charge_if_needed.force_powerwall_max_hours_old_discharge')
             else:
                 _LOGGER.info("No rules for charging")
                 charging_rule = i18n.t('ui.charge_if_needed.not_charging')

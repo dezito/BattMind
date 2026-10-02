@@ -178,6 +178,9 @@ entity:
     most_profit:
       name: "Rozładowanie: Maksymalizuj zysk"
       description: "Włącz, aby rozładowywać wtedy, gdy przynosi to największy zysk, zamiast tylko wtedy, gdy jest to opłacalne"
+    force_powerwall_max_hours_old_discharge:
+      name: "Wymuszone rozładowanie: Maks. wiek kWh w godzinach"
+      description: "Włącz, aby rozładowywać kWh starsze niż maksymalna liczba godzin, nawet jeśli nie jest to opłacalne"
 
   input_number:
     kwh_charged_by_solar:
@@ -206,6 +209,10 @@ entity:
       name: "Min. nadwyżka kWh do sprzedaży"
       description: "Minimalna nadwyżka kWh przeznaczona do sprzedaży, aby zezwolić na rozładowanie"
       unit_of_measurement: kWh
+    powerwall_max_hours_old:
+      name: "Maks. wiek kWh w magazynie energii"
+      description: "Maksymalna liczba godzin, przez które kWh mogą być przechowywane w magazynie energii, zanim muszą zostać rozładowane, nawet jeśli nie jest to opłacalne"
+      unit_of_measurement: godziny
 
   # ---- input_text ----
   input_text:
@@ -368,6 +375,7 @@ ui:
     force_discharge: "Wymuszone rozładowanie"
     charging_watt: "Ładowanie {watt}W"
     discharging_watt: "Rozładowanie {watt}W"
+    force_powerwall_max_hours_old_discharge: "Rozładowanie starszych kWh dozwolone"
 
   startup:
     configuration:

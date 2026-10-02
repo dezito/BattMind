@@ -181,6 +181,9 @@ entity:
     most_profit:
       name: "Afladning: Maksimer profit"
       description: "Aktiver denne for at aflade når det giver mest profit, i stedet for kun at aflade når det er profitabelt"
+    force_powerwall_max_hours_old_discharge:
+      name: "Tvangsafladning: Maks. timer gamle kwh"
+      description: "Aktiver denne for at aflade kWh der er ældre end maks. timer, selvom det ikke er profitabelt"
 
   # ---- input_number ----
   input_number:
@@ -212,6 +215,10 @@ entity:
       name: "Min. overskydende kWh til salg"
       description: "Minimum overskydende kWh til salg for at tillade afladning"
       unit_of_measurement: kWh
+    powerwall_max_hours_old:
+      name: "Maks. timer gamle kWh i husbatteri"
+      description: "Maksimalt antal timer gamle kWh i husbatteriet før de skal afledes, selvom det ikke er profitabelt"
+      unit_of_measurement: timer
   
   # ---- input_text ----
   input_text:
@@ -416,6 +423,7 @@ ui:
     force_discharge: "Tvangsafladning"
     charging_watt: "Lader {watt}W"
     discharging_watt: "Aflader {watt}W"
+    force_powerwall_max_hours_old_discharge: "Afladning af ældre kWh tilladt"
 
   startup:
     configuration:
