@@ -969,6 +969,18 @@ class CombinedPriceProvider(BasePriceProvider):
             return periods
 
         return 1
+    
+    def get_current_price_timestamp(self, timestamp=None, sell_prices=False):
+        if timestamp is None:
+            timestamp = getTime()
+
+        prices = self.sell_real_prices if sell_prices else self.buy_real_prices
+        result = self.get_price_at_timestamp(prices, timestamp)
+
+        if result is None:
+            return None
+
+        return result["price_timestamp"]
 
 class EnergiDataServicePriceProvider(BasePriceProvider):
     func_name = "EnergiDataServicePriceProvider"
@@ -5030,6 +5042,8 @@ def cheap_grid_charge_hours(force_recalculate = False):
 
     current_hour = reset_time_to_hour()
     now = getTime()
+    current_buy_price_timestamp = PRICE_PROVIDER.get_current_price_timestamp(now)
+    current_sell_price_timestamp = PRICE_PROVIDER.get_current_price_timestamp(now, sell_prices=True)
     
     chargeHours = {}
     
@@ -6038,7 +6052,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
                             break
                         
             using_grid_sell_price = True
-            grid_sell_prices_for_day = {timestamp: price for timestamp, price in grid_sell_prices.items() if in_between(timestamp, current_hour, lowest_timestamp + datetime.timedelta(hours=1))}
+            grid_sell_prices_for_day = {timestamp: price for timestamp, price in grid_sell_prices.items() if in_between(timestamp, current_sell_price_timestamp, lowest_timestamp + datetime.timedelta(hours=1))}
             sell_price = float(get_state(f"input_number.{__name__}_solar_sell_fixed_price", float_type=True, error_state=CONFIG['solar']['production_price']))
 
             if sell_price != -1.0:
@@ -6082,6 +6096,9 @@ def cheap_grid_charge_hours(force_recalculate = False):
                 hour = timestamp.hour
                 
                 if timestamp not in grid_sell_prices_for_day:
+                    continue
+                    
+                if timestamp < current_sell_price_timestamp:
                     continue
                 
                 if hour in exclude_hours:
@@ -6202,7 +6219,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
             discharge_hours_needed = int(round_up(excess_kwh_available / (abs(MAX_KWH_DISCHARGING) / day_periods_in_hour)))
             
             using_grid_sell_price = True
-            grid_sell_prices_for_day = {timestamp: price for timestamp, price in grid_sell_prices.items() if in_between(timestamp, charging_plan[day]['start_of_day'], charging_plan[day]['end_of_day'] + datetime.timedelta(hours=6))}
+            grid_sell_prices_for_day = {timestamp: price for timestamp, price in grid_sell_prices.items() if in_between(timestamp, current_sell_price_timestamp, charging_plan[day]['end_of_day'] + datetime.timedelta(hours=6))}
             sell_price = float(get_state(f"input_number.{__name__}_solar_sell_fixed_price", float_type=True, error_state=CONFIG['solar']['production_price']))
             
             if sell_price != -1.0:
@@ -6228,13 +6245,13 @@ def cheap_grid_charge_hours(force_recalculate = False):
                     if timestamp not in grid_sell_prices_for_day:
                         continue
                     
-                    if timestamp < current_hour:
+                    if timestamp < current_sell_price_timestamp:
                         continue
                     
                     if exclude_hours and timestamp.hour in exclude_hours:
                         continue
                     
-                    what_day = daysBetween(current_hour, timestamp)
+                    what_day = daysBetween(current_sell_price_timestamp, timestamp)
                     
                     if what_day not in charging_plan:
                         continue
@@ -6251,6 +6268,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
                     
                     kwh_profit = price - loop_battery_kwh_cost
                     min_profit_per_kwh = get_min_profit_per_kwh()
+                    min_total_profit = get_min_total_profit() / periods_in_hour
                     
                     if day == 0 and timestamp in CHARGING_PLAN.get(day, {}).get('force_discharge_timestamps', {}) and hoursBetween(now, timestamp, error_value=-1) == 0 and excess_profit > 0.0:
                         pass
