@@ -205,6 +205,10 @@ entity:
       name: "Min. profit per kWh when discharging"
       description: "Minimum profit per kWh required to allow discharging"
       unit_of_measurement: "£/kWh"
+    min_total_profit:
+      name: "Min. total profit from discharging"
+      description: "Minimum total profit required to allow discharging"
+      unit_of_measurement: "£"
     min_sell_kwh:
       name: "Minimum excess kWh for export"
       description: "Minimum excess kWh available for export before discharging is allowed"

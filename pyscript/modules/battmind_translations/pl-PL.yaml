@@ -205,6 +205,10 @@ entity:
       name: "Min. zysk na kWh przy rozładowaniu"
       description: "Minimalny zysk na kWh wymagany do rozładowania"
       unit_of_measurement: "zł/kWh"
+    min_total_profit:
+      name: "Min. całkowity zysk z rozładowania"
+      description: "Minimalny całkowity zysk wymagany do zezwolenia na rozładowanie"
+      unit_of_measurement: "zł"
     min_sell_kwh:
       name: "Min. nadwyżka kWh do sprzedaży"
       description: "Minimalna nadwyżka kWh przeznaczona do sprzedaży, aby zezwolić na rozładowanie"

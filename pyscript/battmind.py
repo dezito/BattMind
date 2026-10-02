@@ -370,6 +370,7 @@ DEFAULT_ENTITIES = {
             f"input_number.{__name__}_cheapest_price_rise_threshold": {},
             f"input_number.{__name__}_cheap_price_period_rise_threshold": {},
             f"input_number.{__name__}_min_profit_per_kwh": {},
+            f"input_number.{__name__}_min_total_profit": {},
             f"input_number.{__name__}_min_sell_kwh": {},
             f"input_number.{__name__}_powerwall_max_hours_old": {},
             
@@ -483,6 +484,14 @@ DEFAULT_ENTITIES = {
             "mode":"box",
             "unit_of_measurement": "kr",
             "icon": "mdi:cash-plus"
+        },
+        f"{__name__}_min_total_profit":{
+            "min": 0,
+            "max": 100,
+            "step": 0.01,
+            "mode":"box",
+            "unit_of_measurement": "kr",
+            "icon": "mdi:hand-coin-outline"
         },
         f"{__name__}_min_sell_kwh":{
             "min": 0.2,
@@ -3529,6 +3538,15 @@ def get_min_profit_per_kwh():
     except Exception as e:
         _LOGGER.error(f"Failed to get min profit per kwh from input_number.{__name__}_min_profit_per_kwh, using default 0.0: {e} {type(e)}")
         return 0.0
+
+def get_min_total_profit():
+    func_name = "get_min_total_profit"
+    _LOGGER = globals()['_LOGGER'].getChild(func_name)
+    try:
+        return float(get_state(f"input_number.{__name__}_min_total_profit", float_type=True, error_state=None)) if only_discharge_on_profit_enabled() else 0.0
+    except Exception as e:
+        _LOGGER.error(f"Failed to get min total profit from input_number.{__name__}_min_total_profit, using default 0.0: {e} {type(e)}")
+        return 0.0
     
 def get_min_sell_kwh():
     func_name = "get_min_sell_kwh"
@@ -4945,6 +4963,7 @@ def get_hash_dict():
             get_cheap_price_period_rise_threshold(),
             get_exclude_sell_hours(),
             get_min_profit_per_kwh(),
+            get_min_total_profit(),
             get_min_sell_kwh(),
             cheapest_hour_fill_planner_enabled(),
             cheapest_hour_fill_up_enabled(),
@@ -6299,6 +6318,9 @@ def cheap_grid_charge_hours(force_recalculate = False):
                         pass
                     else:
                         if kwh_profit < min_profit_per_kwh:
+                            continue
+                        
+                        if excess_profit < min_total_profit:
                             continue
                     
                     excess_kwh_available -= excess_kwh_available_current_hour

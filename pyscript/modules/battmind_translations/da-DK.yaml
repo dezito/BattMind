@@ -211,6 +211,10 @@ entity:
       name: "Min. profit per kWh ved afladning"
       description: "Minimum profit per kWh for at tillade afladning"
       unit_of_measurement: kr/kWh
+    min_total_profit:
+      name: "Min. total profit ved afladning"
+      description: "Minimum total profit for at tillade afladning"
+      unit_of_measurement: kr
     min_sell_kwh:
       name: "Min. overskydende kWh til salg"
       description: "Minimum overskydende kWh til salg for at tillade afladning"
