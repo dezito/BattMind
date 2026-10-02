@@ -205,6 +205,10 @@ entity:
       name: "Min. Gewinn pro kWh bei Entladung"
       description: "Mindestgewinn pro kWh, um Entladung zu erlauben"
       unit_of_measurement: "€/kWh"
+    min_total_profit:
+      name: "Min. Gesamtgewinn beim Entladen"
+      description: "Mindestgesamtgewinn, um das Entladen zu erlauben"
+      unit_of_measurement: "€"
     min_sell_kwh:
       name: "Min. überschüssige kWh zum Verkauf"
       description: "Mindestmenge an überschüssigen kWh zum Verkauf, um das Entladen zu erlauben"
