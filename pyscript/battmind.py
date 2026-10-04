@@ -352,7 +352,6 @@ DEFAULT_ENTITIES = {
             
             f"input_boolean.{__name__}_debug_log": {},
             f"input_boolean.{__name__}_deactivate_script": {},
-            f"input_boolean.{__name__}_solar_charging": {},
             f"input_boolean.{__name__}_cheapest_hour_fill_planner": {},
             f"input_boolean.{__name__}_cheapest_hour_fill_up": {},
             f"input_boolean.{__name__}_most_expensive_planner": {},
