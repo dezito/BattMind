@@ -6185,6 +6185,8 @@ def cheap_grid_charge_hours(force_recalculate = False):
                         fixed_price_calc_text = f"{sell_price:.2f} - {grid_sell_prices.get(timestamp, 0.0):.2f} ="
                         
                     charging_plan[what_day]["force_discharge_timestamps"][timestamp] = {
+                        "title": f"Sælger resterende kWh i batteriet",
+                        "emoji": emoji_parse({'discharging': True}),
                         "kwh": kwh,
                         "profit": grid_sell_profit,
                         "reason": (
@@ -6328,7 +6330,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
                         charging_plan[day]["discharge_timestamps"].remove(timestamp)
                     
                     other_day = ""
-                    if what_day != day:
+                    if what_day > day:
                         other_day = f"<br><center>**({charging_plan[day]['start_of_day'].date().strftime('%d/%m')})**</center>"
                     
                     fixed_price_calc_text = ""
@@ -6336,6 +6338,8 @@ def cheap_grid_charge_hours(force_recalculate = False):
                         fixed_price_calc_text = f"{sell_price:.2f} - {grid_sell_prices.get(timestamp, 0.0):.2f} ="
                         
                     charging_plan[what_day]["force_discharge_timestamps"][timestamp] = {
+                        "title": f"Sælger overskydende kWh",
+                        "emoji": emoji_parse({'discharging': True}),
                         "kwh": excess_kwh_available_current_hour,
                         "profit": excess_profit,
                         "reason": (
@@ -7068,7 +7072,106 @@ def cheap_grid_charge_hours(force_recalculate = False):
             overview.append("</center>\n")
     except Exception as e:
         _LOGGER.error(f"Failed to create solar over production overview: {e} {type(e)}")
-        
+    
+    def join_timestamps_by_hour(timestamps):
+        grouped = {}
+
+        for timestamp, data in timestamps.items():
+            if isinstance(timestamp, str):
+                timestamp_dt = datetime.datetime.fromisoformat(timestamp)
+            else:
+                timestamp_dt = timestamp
+
+            timestamp_dt = timestamp_dt.replace(tzinfo=None)
+            hour_timestamp = timestamp_dt.replace(minute=0, second=0, microsecond=0)
+            title = data.get("title", "")
+            group_key = (hour_timestamp, title)
+
+            if group_key not in grouped:
+                grouped[group_key] = []
+
+            grouped[group_key].append({
+                "timestamp": timestamp_dt,
+                "title": title,
+                "emoji": data.get("emoji", ""),
+                "kwh": data.get("kwh", 0.0),
+                "profit": data.get("profit", 0.0),
+                "reason": data.get("reason", "")
+            })
+
+        joined = {}
+
+        for group_key, periods in grouped.items():
+            ordered_periods = []
+
+            for period in periods:
+                insert_index = len(ordered_periods)
+
+                for index in range(len(ordered_periods)):
+                    if period["timestamp"] < ordered_periods[index]["timestamp"]:
+                        insert_index = index
+                        break
+
+                ordered_periods.insert(insert_index, period)
+
+            first_period = ordered_periods[0]
+            first_timestamp = first_period["timestamp"]
+            title = first_period["title"]
+            first_emoji = first_period["emoji"]
+
+            if len(ordered_periods) == 1:
+                joined[first_timestamp] = {
+                    "title": title,
+                    "emoji": first_emoji,
+                    "kwh": first_period["kwh"],
+                    "profit": first_period["profit"],
+                    "reason": first_period["reason"]
+                }
+                continue
+
+            total_kwh = 0.0
+            total_profit = 0.0
+            period_details = []
+
+            for period in ordered_periods:
+                total_kwh += period["kwh"]
+                total_profit += period["profit"]
+
+                time_str = period["timestamp"].strftime("%H:%M")
+                detail = period["reason"]
+
+                summary_end = detail.find("</summary>")
+
+                if summary_end != -1:
+                    detail = detail[summary_end + len("</summary>"):]
+
+                if detail.endswith("</details>"):
+                    detail = detail[:-len("</details>")]
+
+                period_details.append(
+                    f"<details>"
+                    f"<summary>{first_emoji}**{time_str}:** {period['kwh']:.2f} kWh / {period['profit']:.2f} kr</summary>"
+                    f"{detail}"
+                    f"</details>"
+                )
+
+            reason = (
+                f"<details>"
+                f"<summary>{first_emoji}{title} ({total_profit:.2f})</summary>"
+                f"{''.join(period_details)}"
+                f"<br>**Total:** {total_kwh:.2f} kWh / {total_profit:.2f} kr"
+                f"</details>"
+            )
+
+            joined[first_timestamp] = {
+                "title": title,
+                "kwh": total_kwh,
+                "profit": total_profit,
+                "reason": reason
+            }
+
+        return joined
+
     try:
         overview.append("<center>\n")
         overview.append(f"## 🔎 Hour rules ##")
@@ -7076,11 +7179,12 @@ def cheap_grid_charge_hours(force_recalculate = False):
         for day in charging_plan.keys():
             if not isinstance(day, int):
                 continue
+            joined_force_discharge_timestamps = join_timestamps_by_hour(charging_plan[day]['force_discharge_timestamps'])
         
             dict_timestamps_joined = {}
             dict_timestamps_joined.update(charging_plan[day]['force_powerwall_max_hours_old_discharge_timestamps'])
             dict_timestamps_joined.update(charging_plan[day]['blocked_discharge_timestamps'])
-            dict_timestamps_joined.update(charging_plan[day]['force_discharge_timestamps'])
+            dict_timestamps_joined.update(joined_force_discharge_timestamps)
             dict_timestamps_joined.update(charging_plan[day]['charging_sessions'])
             
             overview.append(f"#### 🔎 Day {day} ({charging_plan[day]['start_of_day'].date().strftime('%d/%m')})\n")
