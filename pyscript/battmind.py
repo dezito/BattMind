@@ -60,6 +60,7 @@ from mytime import (
     daysBetween,
     hoursBetween,
     minutesBetween,
+    hourIn,
     getMinute,
     getHour,
     getMonth,
@@ -5278,7 +5279,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
                     diff = abs(percentage_sold) + percentage_added - discharge_limit_percentage
                     percentage_sold -= diff * -1
                     
-            if timestamp not in charging_plan[day]["discharge_timestamps"]:
+            if not hourIn(timestamp, charging_plan[day]["discharge_timestamps"]):
                 percentage_used = 0.0
                     
 
@@ -5445,7 +5446,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
                 charging_plan[what_day]['charging_sessions'][timestamp] = chargeHours[timestamp]
                 charging_plan[what_day]['charging_sessions'][timestamp]['reason'] = reason
                 
-                if timestamp in charging_plan[what_day]["discharge_timestamps"]:
+                if hourIn(timestamp, charging_plan[what_day]["discharge_timestamps"]):
                     charging_plan[what_day]["discharge_timestamps"].remove(timestamp)
             except Exception as e:
                 _LOGGER.error(f"Error in {sub_sub_func_name} what_day:{what_day} timestamp:{timestamp} battery_level_id:{battery_level_id}: {e} {type(e)}")
@@ -5922,7 +5923,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
                         total_grid_solar_kwh.append(charging_plan[day]['solar_kwh_prediction'][h])
                         total_grid_cost_prediction.append(charging_plan[day]['solar_cost_prediction'][h])
                     
-                if timestamp in charging_plan[day]['charging_sessions']:
+                if hourIn(timestamp, charging_plan[day]['charging_sessions']):
                     charging_session = charging_plan[day]['charging_sessions'][timestamp]
                     total_grid_solar_kwh.append(charging_session['kWh'])
                     total_grid_cost_prediction.append(charging_session['Cost'])
@@ -5956,7 +5957,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
                 
                 timestamp = charging_plan[day]["start_of_day"] + datetime.timedelta(hours=hour)
                 
-                if timestamp not in charging_plan[day]["discharge_timestamps"]:
+                if not hourIn(timestamp, charging_plan[day]["discharge_timestamps"]):
                     continue
                 
                 price = grid_prices.get(timestamp, None)
@@ -5970,7 +5971,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
                 profit = price - battery_kwh_cost
                 
                 if profit < min_profit_per_kwh:
-                    if timestamp not in charging_plan[day]["discharge_timestamps"]:
+                    if not hourIn(timestamp, charging_plan[day]["discharge_timestamps"]):
                         _LOGGER.warning(f"Discharge not allowed at day:{day} hour:{hour} timestamp:{timestamp} not in discharge_timestamps, skipping")
                         continue
                     
@@ -6027,7 +6028,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
             for hour in charging_plan[day]['sorted_hour_cost_prediction'][FORECAST_TYPE]:
                 timestamp = current_hour.replace(hour=hour) + datetime.timedelta(days=day)
                 
-                if timestamp not in charging_plan[day]["discharge_timestamps"]:
+                if not hourIn(timestamp, charging_plan[day]["discharge_timestamps"]):
                     continue
                 
                 if timestamp < highest_battery_level_timestamp:
@@ -6407,17 +6408,17 @@ def cheap_grid_charge_hours(force_recalculate = False):
                 _LOGGER.debug(f"Day:{day} current_hour:{current_hour} is too recent, skipping it")
                 return
             
-            if current_hour in charging_plan[day]['charging_sessions']:
+            if hourIn(current_hour, charging_plan[day]['charging_sessions']):
                 _LOGGER.debug(f"Day:{day} current_hour:{current_hour} is in charging_sessions, skipping it")
                 return
             
-            if current_hour in charging_plan[day]['force_discharge_timestamps']:
+            if hourIn(current_hour, charging_plan[day]['force_discharge_timestamps']):
                 _LOGGER.debug(f"Day:{day} current_hour:{current_hour} is in force_discharge_timestamps, skipping it")
                 return
             
             charging_plan[day]['blocked_discharge_timestamps'].pop(current_hour, None)
             
-            if current_hour not in charging_plan[day]["discharge_timestamps"]:
+            if not hourIn(current_hour, charging_plan[day]["discharge_timestamps"]):
                 _LOGGER.warning(f"Day:{day} current_hour:{current_hour} not in discharge_timestamps, adding it back to discharge_timestamps")
                 charging_plan[day]["discharge_timestamps"].append(current_hour)
                 
