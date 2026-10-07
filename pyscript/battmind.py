@@ -3376,7 +3376,6 @@ def join_unique_emojis(str1: str, str2: str) -> str:
         emojis1 = set(str1.split())
         emojis2 = set(str2.split())
         unique_emojis = emojis1.union(emojis2)
-        _LOGGER.info(f"Joining emojis: {str1} + {str2} -> {' '.join(unique_emojis)}")
         return ' '.join(unique_emojis)
     return str1 or str2
 
@@ -5037,7 +5036,7 @@ def should_skip_calculation():
         
         if item_hash != LAST_HASH_RESULTS[key]:
             skip_calculation = False
-            _LOGGER.info(f"Hash snapshot changed for {key}: {LAST_HASH_RESULTS[key]} != {item_hash}")
+            _LOGGER.debug(f"Hash snapshot changed for {key}: {LAST_HASH_RESULTS[key]} != {item_hash}")
     
     return skip_calculation
 
@@ -5072,7 +5071,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
         task_cancel(func_prefix, task_remove=True, startswith=True)
     
     if should_skip_calculation() and not force_recalculate:
-        _LOGGER.error("Hash is the same, skipping calculation")
+        _LOGGER.debug("Hash is the same, skipping calculation")
         return
     
     amount_of_days = DAYS_TO_PREDICT
