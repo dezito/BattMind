@@ -5913,6 +5913,10 @@ def cheap_grid_charge_hours(force_recalculate = False):
             
             for h in range(0, hour + 1):
                 timestamp = current_hour.replace(hour=h) + datetime.timedelta(days=day)
+                
+                if timestamp < current_hour:
+                    continue
+                
                 if h < solar_index and charging_plan[day]['solar_kwh_prediction'][h] > 0.0:
                     after_solar_added = sum(powerwall_kwh) - charging_plan[day]['solar_kwh_prediction'][h]
                     if after_solar_added >= min_battery_level:
