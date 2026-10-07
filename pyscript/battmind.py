@@ -5950,8 +5950,9 @@ def cheap_grid_charge_hours(force_recalculate = False):
             
             nonlocal charging_plan, grid_prices
             
+            from_hour = current_hour.hour if day == 0 else 0
             
-            for hour in range(24):
+            for hour in range(from_hour, 24):
                 if hour not in charging_plan[day]['battery_level_flow']:
                     continue
                 
