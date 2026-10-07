@@ -6192,7 +6192,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
                         "kwh": kwh,
                         "profit": grid_sell_profit,
                         "reason": (
-                            f"<details><summary>{emoji_parse({'discharging': True})}Sælger resterende kWh i batteriet ({grid_sell_profit:.2f})</summary>"
+                            f"<details><summary>{emoji_parse({'discharging': True})}Sælger resterende kWh i batteriet<br>({kwh:.1f} kWh / {grid_sell_profit:.2f} kr)</summary>"
                             f"Battery kWh cost (basis): **{battery_kwh_cost_raw:.2f} {i18n.t('ui.common.valuta_kwh')}**<br>"
                             f"Charge/Discharge loss: **{battery_loss_cost:.2f} {i18n.t('ui.common.valuta_kwh')}**<br>"
                             f"Wear cost per kWh: **{abs(CONFIG['solar']['powerwall_wear_cost_per_kwh']):.2f} {i18n.t('ui.common.valuta_kwh')}**<br>"
@@ -6347,7 +6347,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
                         "kwh": excess_kwh_available_current_hour,
                         "profit": excess_profit,
                         "reason": (
-                            f"<details><summary>{emoji_parse({'discharging': True})}Sælger overskydende kWh ({excess_profit:.2f}){other_day}</summary>"
+                            f"<details><summary>{emoji_parse({'discharging': True})}Sælger overskydende kWh<br>({excess_kwh_available_current_hour:.1f} kWh / {excess_profit:.2f} kr){other_day}</summary>"
                             f"Battery kWh cost (basis): **{loop_battery_kwh_cost_raw:.2f} {i18n.t('ui.common.valuta_kwh')}**<br>"
                             f"Charge/Discharge loss: **{loop_battery_loss_cost:.2f} {i18n.t('ui.common.valuta_kwh')}**<br>"
                             f"Wear cost per kWh: **{abs(CONFIG['solar']['powerwall_wear_cost_per_kwh']):.2f} {i18n.t('ui.common.valuta_kwh')}**<br>"
@@ -7161,7 +7161,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
 
             reason = (
                 f"<details>"
-                f"<summary>{first_emoji}{title} ({total_profit:.2f})</summary>"
+                f"<summary>{first_emoji}{title}<br>({total_kwh:.1f} kWh / {total_profit:.2f} kr)</summary>"
                 f"{''.join(period_details)}"
                 f"<br>**Total:** {total_kwh:.2f} kWh / {total_profit:.2f} kr"
                 f"</details>"
