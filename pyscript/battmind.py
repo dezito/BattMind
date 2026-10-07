@@ -6068,7 +6068,9 @@ def cheap_grid_charge_hours(force_recalculate = False):
             _LOGGER = globals()['_LOGGER'].getChild(f"{func_name}.{sub_func_name}.{sub_sub_func_name}")
             
             nonlocal charging_plan, grid_prices, grid_sell_prices
-                            
+            
+            from_timestamp = max(charging_plan[day]['start_of_day'], current_sell_price_timestamp)
+            
             lowest_timestamp = charging_plan[day]['end_of_day']
             lowest_battery_level = sum(charging_plan[day]['battery_level_end_of_day'])
             
@@ -6095,7 +6097,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
                             break
                         
             using_grid_sell_price = True
-            grid_sell_prices_for_day = {timestamp: price for timestamp, price in grid_sell_prices.items() if in_between(timestamp, current_sell_price_timestamp, lowest_timestamp + datetime.timedelta(hours=1))}
+            grid_sell_prices_for_day = {timestamp: price for timestamp, price in grid_sell_prices.items() if in_between(timestamp, from_timestamp, lowest_timestamp + datetime.timedelta(hours=1))}
             sell_price = float(get_state(f"input_number.{__name__}_solar_sell_fixed_price", float_type=True, error_state=CONFIG['solar']['production_price']))
 
             if sell_price != -1.0:
@@ -6141,7 +6143,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
                 if timestamp not in grid_sell_prices_for_day:
                     continue
                     
-                if timestamp < current_sell_price_timestamp:
+                if timestamp < from_timestamp:
                     continue
                 
                 if hour in exclude_hours:
@@ -6210,7 +6212,9 @@ def cheap_grid_charge_hours(force_recalculate = False):
             _LOGGER = globals()['_LOGGER'].getChild(f"{func_name}.{sub_func_name}.{sub_sub_func_name}")
             
             nonlocal charging_plan, grid_prices, grid_sell_prices
-                        
+            
+            from_timestamp = max(charging_plan[day]['start_of_day'], current_sell_price_timestamp)
+            
             lowest_timestamp = charging_plan[day]['end_of_day']
             lowest_battery_level = sum(charging_plan[day]['battery_level_end_of_day'])
             using_next_day = False
@@ -6264,7 +6268,7 @@ def cheap_grid_charge_hours(force_recalculate = False):
             discharge_hours_needed = int(round_up(excess_kwh_available / (abs(MAX_KWH_DISCHARGING) / day_periods_in_hour)))
             
             using_grid_sell_price = True
-            grid_sell_prices_for_day = {timestamp: price for timestamp, price in grid_sell_prices.items() if in_between(timestamp, current_sell_price_timestamp, charging_plan[day]['end_of_day'] + datetime.timedelta(hours=6))}
+            grid_sell_prices_for_day = {timestamp: price for timestamp, price in grid_sell_prices.items() if in_between(timestamp, from_timestamp, charging_plan[day]['end_of_day'] + datetime.timedelta(hours=6))}
             sell_price = float(get_state(f"input_number.{__name__}_solar_sell_fixed_price", float_type=True, error_state=CONFIG['solar']['production_price']))
             
             if sell_price != -1.0:
@@ -6290,13 +6294,13 @@ def cheap_grid_charge_hours(force_recalculate = False):
                     if timestamp not in grid_sell_prices_for_day:
                         continue
                     
-                    if timestamp < current_sell_price_timestamp:
+                    if timestamp < from_timestamp:
                         continue
                     
                     if exclude_hours and timestamp.hour in exclude_hours:
                         continue
                     
-                    what_day = daysBetween(current_sell_price_timestamp, timestamp)
+                    what_day = daysBetween(charging_plan[0]['start_of_day'], timestamp)
                     
                     if what_day not in charging_plan:
                         continue
